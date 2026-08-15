@@ -1,0 +1,1 @@
+Kubernetes Setup: Minikube start, kubectl get pods, kubectl apply -f deployment.yaml

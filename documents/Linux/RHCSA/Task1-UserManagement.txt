@@ -1,0 +1,1 @@
+User Management Notes: Use useradd, usermod, and passwd commands.

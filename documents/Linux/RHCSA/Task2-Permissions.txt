@@ -1,0 +1,1 @@
+Permissions Notes: Chmod 755 for executables, 644 for regular files.

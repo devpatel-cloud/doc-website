@@ -1,0 +1,1 @@
+Bucket,AccessLevel,RetentionDays\nfinance-data,Private,365\nlogs,PublicRead,30
