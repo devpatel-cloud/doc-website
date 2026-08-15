@@ -252,7 +252,12 @@ async def upload_file(
             detail=f"File extension '.{ext}' is not allowed for security reasons."
         )
 
-    os.makedirs(target_dir, exist_ok=True)
+    os.makedirs(target_dir, mode=0o775, exist_ok=True)
+    try:
+        os.chmod(target_dir, 0o775)
+    except Exception:
+        pass
+
     target_file_path = os.path.realpath(os.path.join(target_dir, filename))
 
     if not target_file_path.startswith(DOCUMENTS_DIR) or os.path.islink(target_file_path):
@@ -306,9 +311,12 @@ async def upload_file(
                 detail=f"File signature does not match declared extension '.{ext}'"
             )
 
-        # Atomic Move to destination with safe non-executable permissions (0o644)
+        # Atomic Move to destination with safe non-executable permissions (0o664)
         shutil.move(tmp_path, target_file_path)
-        os.chmod(target_file_path, 0o644)
+        try:
+            os.chmod(target_file_path, 0o664)
+        except Exception:
+            pass
 
         logger.info(
             f"[UPLOAD SUCCESS] IP: {client_ip} | File: {filename} | "

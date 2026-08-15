@@ -1,9 +1,28 @@
-# DocVault V2 — Security Audit & Deployment Validation Report
+# DocVault V2 — Security Audit & Volume Permission Report
 
-This document details the defense-in-depth security audit and server deployment validation performed on **DocVault V2**, outlining identified risks, mitigations, empirical test results, residual risks, and deployment safety measures.
+This document details the defense-in-depth security audit, volume permission model, and server deployment validation performed on **DocVault V2**.
 
 > [!NOTE]
-> **Security Baseline**: DocVault V2 is hardened against common web application, file upload, path traversal, brute-force, CSRF, XSS, and Docker privilege escalation risks. In accordance with security best practices, this system is designed for **strong defense-in-depth**, not an absolute guarantee of perfection.
+> **Security Baseline**: DocVault V2 is hardened against common web application, file upload, path traversal, brute-force, CSRF, XSS, and Docker privilege escalation risks.
+
+---
+
+## 🔒 Document Volume Permission Model (Least Privilege)
+
+To resolve file creation permissions without exposing `777` permissions or running containers as `root`:
+
+1. **FastAPI Process Identity**:
+   - Runs as non-root user `appuser` (`UID 100`, `GID 101`).
+   - Mounts host `./documents` as read-write (`./documents:/documents:rw`).
+2. **Nginx Process Identity**:
+   - Runs worker processes as `nginx` (`UID 101`, `GID 101`).
+   - Mounts host `./documents` as read-only (`./documents:/var/www/documents:ro`).
+3. **Host Permission Structure (`775` + `setgid`)**:
+   - Host user (`dev_patel`) retains file ownership.
+   - Group ownership of `./documents` is set to GID `101`.
+   - Permissions set to `775` (`rwxrwxr-x`) with `setgid` bit enabled (`chmod g+s ./documents`).
+   - All newly created subdirectories automatically inherit group `101`.
+   - Uploaded files are created with non-executable mode `664` (`rw-rw-r--`).
 
 ---
 
@@ -21,20 +40,6 @@ This document details the defense-in-depth security audit and server deployment 
 | **8** | **Storage Exhaustion / DoS** | **MEDIUM** | Enforced 100MB file size limit (`DOCVAULT_MAX_FILE_SIZE_MB`), 1GB minimum disk space threshold check (`DOCVAULT_MIN_FREE_DISK_GB`), and atomic temp upload cleanup. | Attempted oversized upload and verified free storage check in `app/main.py`. | Low. Rapid multi-user parallel uploads exhausting free threshold simultaneously. | Implement disk quota per directory / user role. |
 | **9** | **Stored Cross-Site Scripting (XSS)** | **MEDIUM** | Sanitized filenames on server side (`sanitize_filename`) and enforced HTML escaping (`escapeHTML`) across all frontend JS rendering. | Tested uploading filename containing `<script>alert(1)</script>.pdf` (rendered harmlessly as text). | Very Low. Unescaped third-party browser extension DOM injections. | Remove `unsafe-inline` from Nginx CSP when fonts are self-hosted. |
 | **10**| **Dual Stack IPv4 / IPv6 Firewalling** | **MEDIUM** | Updated `nginx/nginx.conf` with explicit dual-stack listeners `listen 80;` and `listen [::]:80;`. | Verified Nginx binds to both IPv4 and IPv6 sockets while keeping FastAPI private. | Low. Host firewall misconfiguration. | Audit `ufw status verbose` to ensure only ports 80/443 are exposed. |
-
----
-
-## ⚙️ Deployment Validation & Secret Isolation
-
-1. **Missing `.env` Resiliency**:
-   - `docker-compose.yml` configures `env_file` with `path: .env` and `required: false`.
-   - If `.env` is missing on a new server checkout, Docker Compose gracefully falls back to default environment variables (`DOCVAULT_ADMIN_PASSWORD=devpatel`) rather than crashing or skipping `docvault-fastapi`.
-2. **Secret Isolation**:
-   - `.env` and `.env.*` are explicitly listed in `.gitignore` (`!.env.example`).
-   - `.env.example` contains variable names and comments only. Secrets are never committed to Git.
-3. **Container Health & Network Privacy**:
-   - `docvault-fastapi` exposes internal port 8000 to Docker network only (`expose: - "8000"`). Host port mapping (`ports: - "8000:8000"`) is FORBIDDEN.
-   - Nginx checks `fastapi` service health (`condition: service_healthy`) before completing container startup.
 
 ---
 

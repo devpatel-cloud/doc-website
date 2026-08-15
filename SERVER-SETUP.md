@@ -4,6 +4,30 @@ Complete step-by-step production deployment guide for **DocVault V2** on Ubuntu 
 
 ---
 
+## 🔒 Document Directory Permissions (Least-Privilege Model)
+
+To allow the non-root FastAPI process (`UID 100` / `GID 101`) to write uploaded files while preserving owner access for host user (`dev_patel`) and read-only access for Nginx, configure Linux group permissions on `./documents`:
+
+```bash
+# 1. Set group ownership of ./documents to GID 101 (appgroup / nginx)
+sudo chown -R $USER:101 ./documents
+
+# 2. Set mode 775 (Owner: rwx, Group 101: rwx, Others: r-x)
+sudo chmod -R 775 ./documents
+
+# 3. Enable setgid bit so all newly created subfolders automatically inherit GID 101
+sudo chmod g+s ./documents
+```
+
+> [!IMPORTANT]
+> **Least Privilege Assurance**:
+> - NO `chmod 777` or `chmod -R 777` permissions are used.
+> - FastAPI container runs as non-root user `appuser` (`UID 100`, `GID 101`).
+> - Nginx container mounts `./documents` as read-only (`:ro`).
+> - All uploaded files are assigned mode `664` (`rw-rw-r--`) non-executable permissions.
+
+---
+
 ## 📋 Environment Configuration & Secret Setup
 
 ### 1. Copy Environment Template
@@ -36,9 +60,6 @@ DOCVAULT_MIN_FREE_DISK_GB=1.0
 DOCVAULT_SESSION_SECRET=GenerateRandomSecretString64CharsLong
 ```
 
-> [!IMPORTANT]
-> **Zero Password Hardcoding**: `DOCVAULT_ADMIN_PASSWORD` is supplied strictly through `.env` (or environment). Never commit `.env` to Git repository.
-
 ### 3. Restrict File Permissions
 Apply strict file permissions so only the owner can read/write `.env`:
 
@@ -50,71 +71,35 @@ chmod 600 .env
 
 ## 🚀 Deployment Commands
 
-### 1. Validate Docker Compose Config
-Verify that Docker Compose recognizes your environment variables and YAML structure:
-
 ```bash
+# 1. Validate Docker Compose config
 docker compose config
-```
 
-### 2. Build Container Images
-Build the FastAPI container image:
-
-```bash
+# 2. Build container images
 docker compose build
-```
 
-### 3. Launch Services in Background
-Start both containers in detached mode:
-
-```bash
+# 3. Launch services in background
 docker compose up -d
-```
 
-### 4. Verify Container Health Status
-Confirm that both `docvault-fastapi` and `lightweight-document-server` containers are running and healthy:
-
-```bash
+# 4. Verify container status
 docker compose ps
-```
 
-Expected output:
-```text
-NAME                          STATUS
-docvault-fastapi              Up (healthy)
-lightweight-document-server   Up (healthy)
+# 5. Check FastAPI logs
+docker compose logs fastapi --tail=50
 ```
 
 ---
 
-## 🔍 Diagnostic & Verification Commands
+## 🔍 Verification & Health Checks
 
-### Inspect Container Logs
-If a container fails to start, inspect detailed logs:
-
-```bash
-# FastAPI backend logs
-docker compose logs fastapi
-
-# Nginx web server logs
-docker compose logs document-server
-```
-
-### Test FastAPI Internal Health Endpoint
-Verify that FastAPI's internal health check endpoint responds:
+### Test Container Write Permissions
+Run the touch permission check inside the container:
 
 ```bash
-docker exec docvault-fastapi python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/api/auth/status').read().decode())"
+docker exec docvault-fastapi touch /documents/.upload-permission-test
+docker exec docvault-fastapi rm /documents/.upload-permission-test
 ```
 
-Expected output:
-```json
-{"authenticated": false}
-```
-
-### Test Administrator Upload via Web Browser
-1. Open `http://your-server-ip` or `https://docs.yourdomain.com` in your browser.
-2. Click **Upload** in the header navigation bar.
-3. Enter your production password (configured in `DOCVAULT_ADMIN_PASSWORD`).
-4. Choose target destination folder (e.g. `DevOps`).
-5. Drag and drop your documents/videos and click **Start Upload**.
+### Test Web Uploads via Browser
+1. Open `https://docs.yourdomain.com` in your browser.
+2. Click **Upload** -> Enter production password -> Select destination folder -> Upload file.
