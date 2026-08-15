@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>404 — Document Not Found | DocVault</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/errors/error.css">
+</head>
+<body class="theme-blue">
+
+  <!-- Ambient Animated Background Canvas -->
+  <div class="bg-mesh" aria-hidden="true">
+    <div class="bg-dot-grid"></div>
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+  </div>
+
+  <!-- DocVault Brand Header -->
+  <a href="/#/" class="error-header" title="Return to DocVault Home">
+    <div class="brand-icon">📁</div>
+    <div class="brand-text">
+      <h1>DocVault</h1>
+      <p>Public Document Explorer</p>
+    </div>
+  </a>
+
+  <!-- Main Error Card -->
+  <main class="error-container">
+    <div class="error-card">
+      <div class="hero-number">404</div>
+
+      <!-- Custom SVG Illustration: Searching Broken Document -->
+      <div class="illustration-box" aria-hidden="true">
+        <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="25" y="20" width="54" height="70" rx="8" fill="#1e293b" stroke="#3b82f6" stroke-width="2.5" stroke-dasharray="4 4"/>
+          <path d="M40 40H64M40 52H56" stroke="#64748b" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="72" cy="72" r="22" fill="#0f172a" stroke="#60a5fa" stroke-width="3"/>
+          <path d="M88 88L102 102" stroke="#60a5fa" stroke-width="3.5" stroke-linecap="round"/>
+          <path d="M64 72H80" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+
+      <h2 class="error-title">Document Not Found</h2>
+      <p class="error-desc">
+        Looks like this document took a wrong turn or has been moved to another location in DocVault.
+      </p>
+
+      <!-- Action Buttons -->
+      <div class="action-buttons">
+        <a href="/#/" id="btn-go-home" class="btn btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"></path></svg>
+          Go Home
+        </a>
+        <button id="btn-go-back" class="btn btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+          Go Back
+        </button>
+        <button id="btn-search" class="btn btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          Search
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Minimal Security Footer -->
+  <footer class="error-footer">
+    <p>DocVault &bull; Public Document Explorer</p>
+  </footer>
+
+  <script src="/errors/error.js"></script>
+</body>
+</html>

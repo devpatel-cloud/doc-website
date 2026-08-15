@@ -1,8 +1,27 @@
 services:
+  fastapi:
+    build: ./app
+    container_name: docvault-fastapi
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./documents:/documents:rw
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/auth/status')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
   document-server:
     image: nginx:1.25-alpine
     container_name: lightweight-document-server
     restart: unless-stopped
+    depends_on:
+      fastapi:
+        condition: service_healthy
     ports:
       - "8085:80"
       # To run directly on standard HTTP port 80 in production, change to:

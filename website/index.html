@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Lightweight, folder-based public document portal. Navigate folders, view, and download documents directly.">
-  <title>Public Document Explorer</title>
+  <meta name="description" content="Lightweight, folder-based public document portal with secure admin upload system.">
+  <title>DocVault — Public Document Explorer</title>
   <!-- Google Fonts: Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -38,8 +38,17 @@
         <kbd class="search-shortcut">/</kbd>
       </div>
 
-      <!-- View Controls -->
+      <!-- Header Controls & Upload Button -->
       <div class="header-controls">
+        <button id="btn-open-upload" class="btn-header-upload" title="Admin Upload">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <span>Upload</span>
+        </button>
+
         <div class="view-toggle" role="group" aria-label="View toggle">
           <button id="btn-grid-view" class="view-btn active" title="Grid View" aria-label="Grid View">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -154,7 +163,7 @@
     </div>
   </main>
 
-  <!-- Document Preview Modal -->
+  <!-- Document & Video Preview Modal -->
   <div id="viewer-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-container">
       <div class="modal-header">
@@ -185,10 +194,127 @@
     </div>
   </div>
 
+  <!-- Admin Auth Modal -->
+  <div id="auth-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-container auth-modal-box">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="brand-icon" style="width:32px; height:32px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+          </div>
+          <h2>Administrator Access</h2>
+        </div>
+        <button id="auth-close-btn" class="btn-icon btn-close" aria-label="Close">✕</button>
+      </div>
+      <form id="auth-form" class="auth-form-body">
+        <p class="auth-subtitle">Enter the administrator password to unlock file uploads.</p>
+        <div id="auth-error-msg" class="auth-error hidden">Incorrect password. Please try again.</div>
+        <div class="form-group">
+          <label for="auth-password-input">Password</label>
+          <input type="password" id="auth-password-input" placeholder="Enter admin password" required autofocus autocomplete="current-password">
+        </div>
+        <div class="form-actions">
+          <button type="button" id="auth-cancel-btn" class="btn-secondary">Cancel</button>
+          <button type="submit" id="auth-submit-btn" class="btn-download">Continue →</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Admin Upload Drawer / Modal -->
+  <div id="upload-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-container upload-modal-box">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="badge" style="background-color: var(--success-bg); color: var(--success);">Admin Upload</span>
+          <h2>Upload Documents & Videos</h2>
+        </div>
+        <div class="modal-header-actions">
+          <button id="btn-admin-logout" class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.625rem;">Logout</button>
+          <button id="upload-close-btn" class="btn-icon btn-close" aria-label="Close">✕</button>
+        </div>
+      </div>
+
+      <div class="upload-modal-grid">
+        <!-- Left Column: Destination Folder Tree -->
+        <div class="upload-tree-section">
+          <h3>1. Select Destination Folder</h3>
+          <div class="destination-display">
+            Selected: <strong id="selected-folder-display">Documents Root</strong>
+          </div>
+          <div id="folder-tree-container" class="folder-tree-box">
+            <!-- Dynamic Folder Tree rendered by script.js -->
+          </div>
+        </div>
+
+        <!-- Right Column: File Dropzone & Queue -->
+        <div class="upload-files-section">
+          <h3>2. Select Files to Upload</h3>
+          
+          <div id="dropzone" class="dropzone">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <p>Drag and drop documents or videos here, or</p>
+            <label for="file-input" class="btn-secondary btn-browse">Choose Files</label>
+            <input type="file" id="file-input" multiple class="hidden">
+            <span class="dropzone-hint">Supports PDFs, Office docs, images, MP4/WebM videos (Max 100MB)</span>
+          </div>
+
+          <!-- File Queue List -->
+          <div id="file-queue-container" class="file-queue-container hidden">
+            <h4>Files Queue (<span id="queue-count">0</span>)</h4>
+            <div id="file-queue-list" class="file-queue-list"></div>
+
+            <!-- Overall Progress Bar -->
+            <div id="overall-progress-box" class="progress-box hidden">
+              <div class="progress-header">
+                <span id="progress-status-text">Uploading files...</span>
+                <span id="overall-progress-pct">0%</span>
+              </div>
+              <div class="progress-bar-bg">
+                <div id="overall-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <div class="queue-actions">
+              <button id="btn-clear-queue" class="btn-secondary">Clear List</button>
+              <button id="btn-start-upload" class="btn-download">Start Upload →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Duplicate File Prompt Modal -->
+  <div id="duplicate-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-container duplicate-modal-box">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="badge" style="background-color: var(--warning-bg); color: var(--warning);">File Exists</span>
+          <h2>Duplicate File Detected</h2>
+        </div>
+      </div>
+      <div class="modal-body" style="padding: 1.5rem; background: var(--bg-surface); display: block;">
+        <p style="margin-bottom: 1rem;" id="duplicate-msg-text">A file with this name already exists in the selected destination folder.</p>
+        <div class="form-actions" style="justify-content: flex-end; gap: 0.75rem;">
+          <button id="btn-dup-cancel" class="btn-secondary">Skip / Cancel</button>
+          <button id="btn-dup-replace" class="btn-download" style="background-color: var(--warning); border-color: var(--warning);">Replace File</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Footer -->
   <footer class="site-footer">
     <div class="footer-container">
-      <p>DocVault Public Document Server — Powered by Nginx & Docker</p>
+      <p>DocVault Public Document Server V2 — Powered by Nginx, FastAPI & Docker</p>
     </div>
   </footer>
 

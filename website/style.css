@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Folder-Based Public Document Portal — Style System
+   DocVault V2 — Style System
    ========================================================================== */
 
 :root {
@@ -31,6 +31,9 @@
 
   --warning: #ea580c;
   --warning-bg: #ffedd5;
+
+  --video: #e11d48;
+  --video-bg: #ffe4e6;
 
   /* Typography */
   --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -132,7 +135,7 @@ body {
 /* Search Box */
 .search-box {
   flex: 1;
-  max-width: 520px;
+  max-width: 480px;
   position: relative;
   display: flex;
   align-items: center;
@@ -194,7 +197,35 @@ body {
   background-color: var(--bg-subtle);
 }
 
-/* View Toggle Controls */
+/* Header Controls & Upload Button */
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.btn-header-upload {
+  background-color: var(--primary);
+  color: #ffffff;
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.875rem;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+}
+
+.btn-header-upload:hover {
+  background-color: var(--primary-hover);
+  box-shadow: var(--shadow-md);
+}
+
 .view-toggle {
   display: flex;
   background-color: var(--bg-subtle);
@@ -382,7 +413,7 @@ body {
 }
 
 /* ==========================================================================
-   Document & Folder Grid View
+   Document Grid View
    ========================================================================== */
 .documents-grid {
   display: grid;
@@ -408,7 +439,6 @@ body {
   border-color: var(--border-medium);
 }
 
-/* Specific styling for Folder Cards */
 .folder-card {
   border-color: var(--folder-border);
   background: linear-gradient(180deg, #fffbeb 0%, #ffffff 100%);
@@ -438,12 +468,13 @@ body {
   flex-shrink: 0;
 }
 
-/* Type specific styling */
+/* Type specific badges & icons */
 .type-folder { background-color: var(--folder-bg); color: var(--folder-icon); }
 .type-pdf { background-color: var(--danger-bg); color: var(--danger); }
 .type-doc { background-color: var(--primary-bg); color: var(--primary); }
 .type-sheet { background-color: var(--success-bg); color: var(--success); }
 .type-image { background-color: #f3e8ff; color: #9333ea; }
+.type-video { background-color: var(--video-bg); color: var(--video); }
 .type-archive { background-color: var(--warning-bg); color: var(--warning); }
 .type-text { background-color: var(--bg-subtle); color: var(--text-muted); }
 
@@ -532,7 +563,7 @@ body {
 }
 
 /* ==========================================================================
-   Document & Folder List View
+   Document List View
    ========================================================================== */
 .documents-list {
   background-color: var(--bg-surface);
@@ -689,7 +720,7 @@ body {
 }
 
 /* ==========================================================================
-   Modal Dialog
+   Modals & Drawers
    ========================================================================== */
 .modal-backdrop {
   position: fixed;
@@ -778,8 +809,18 @@ body {
 .btn-download {
   background-color: var(--primary);
   color: #ffffff;
-  border-color: var(--primary);
-  font-weight: 500;
+  border: 1px solid var(--primary);
+  padding: 0.5rem 1.25rem;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  transition: all var(--transition-fast);
 }
 
 .btn-download:hover {
@@ -814,6 +855,13 @@ body {
   padding: 1rem;
 }
 
+.modal-video-preview {
+  width: 100%;
+  max-height: 100%;
+  outline: none;
+  background: #000;
+}
+
 .modal-text-preview {
   width: 100%;
   height: 100%;
@@ -833,9 +881,303 @@ body {
   max-width: 400px;
 }
 
-/* ==========================================================================
-   Footer
-   ========================================================================== */
+/* Auth Modal Box */
+.auth-modal-box {
+  max-width: 420px;
+  height: auto;
+}
+
+.auth-form-body {
+  padding: 1.5rem;
+}
+
+.auth-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin-bottom: 1.25rem;
+}
+
+.auth-error {
+  background-color: var(--danger-bg);
+  color: var(--danger);
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+  margin-bottom: 1rem;
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-group label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin-bottom: 0.375rem;
+  color: var(--text-main);
+}
+
+.form-group input {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 0.875rem;
+  outline: none;
+}
+
+.form-group input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+/* Upload Modal Grid Box */
+.upload-modal-box {
+  max-width: 1080px;
+  height: 85vh;
+}
+
+.upload-modal-grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  flex: 1;
+  overflow: hidden;
+}
+
+.upload-tree-section {
+  border-right: 1px solid var(--border-light);
+  padding: 1.25rem;
+  background-color: var(--bg-subtle);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.upload-tree-section h3 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.destination-display {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-medium);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+}
+
+.destination-display strong {
+  color: var(--primary);
+}
+
+.folder-tree-box {
+  flex: 1;
+  overflow-y: auto;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 0.5rem;
+}
+
+.tree-node {
+  padding: 0.4rem 0.625rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-main);
+  user-select: none;
+  transition: background-color var(--transition-fast);
+}
+
+.tree-node:hover {
+  background-color: var(--primary-bg);
+  color: var(--primary);
+}
+
+.tree-node.selected {
+  background-color: var(--primary-bg);
+  color: var(--primary);
+  font-weight: 600;
+  border-left: 3px solid var(--primary);
+}
+
+.tree-children {
+  padding-left: 1.25rem;
+}
+
+/* Upload Files Section */
+.upload-files-section {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.upload-files-section h3 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.dropzone {
+  border: 2px dashed var(--border-medium);
+  background-color: var(--bg-primary);
+  border-radius: var(--radius-lg);
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  transition: all var(--transition-fast);
+}
+
+.dropzone.dragover {
+  border-color: var(--primary);
+  background-color: var(--primary-bg);
+}
+
+.dropzone p {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin: 0.75rem 0;
+}
+
+.btn-browse {
+  display: inline-block;
+  cursor: pointer;
+}
+
+.dropzone-hint {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-subtle);
+  margin-top: 0.75rem;
+}
+
+/* Queue List */
+.file-queue-container {
+  margin-top: 1.5rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-queue-container h4 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.file-queue-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-surface);
+  margin-bottom: 1rem;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 0.8125rem;
+}
+
+.queue-item:last-child {
+  border-bottom: none;
+}
+
+.queue-item-info {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  overflow: hidden;
+}
+
+.queue-item-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
+.queue-item-size {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.queue-item-remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 50%;
+  line-height: 1;
+}
+
+.queue-item-remove:hover {
+  color: var(--danger);
+  background-color: var(--danger-bg);
+}
+
+/* Progress Box */
+.progress-box {
+  margin-bottom: 1rem;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin-bottom: 0.375rem;
+}
+
+.progress-bar-bg {
+  height: 8px;
+  background-color: var(--bg-subtle);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background-color: var(--primary);
+  transition: width 0.2s ease;
+}
+
+.queue-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: auto;
+}
+
+/* Duplicate Modal Box */
+.duplicate-modal-box {
+  max-width: 460px;
+  height: auto;
+}
+
+/* Footer */
 .site-footer {
   border-top: 1px solid var(--border-light);
   background-color: var(--bg-surface);
@@ -857,13 +1199,15 @@ body {
     max-width: 100%;
   }
 
-  .navigation-bar {
-    flex-direction: column;
-    align-items: stretch;
+  .upload-modal-grid {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
   }
 
-  .sort-selector {
-    justify-content: flex-end;
+  .upload-tree-section {
+    border-right: none;
+    border-bottom: 1px solid var(--border-light);
+    max-height: 250px;
   }
 
   .documents-grid {

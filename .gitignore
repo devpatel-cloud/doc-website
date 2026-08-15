@@ -1,0 +1,15 @@
+# Environment files
+.env
+
+# Document files (exclude actual documents on host, retain folder template)
+documents/*
+!documents/.gitkeep
+
+# Python caches & build files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Log files
+*.log

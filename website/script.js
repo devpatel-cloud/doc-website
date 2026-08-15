@@ -1,5 +1,5 @@
 /**
- * Public Document Portal — Folder-Based Client Engine
+ * DocVault V2 — Client Engine
  * Vanilla JavaScript (Zero External Dependencies)
  */
 
@@ -9,22 +9,29 @@
   // Application State
   const state = {
     currentPath: [], // Array of subfolder names, e.g. ['Linux', 'RHCSA']
-    currentItems: [], // Items (files & folders) in active directory
-    filteredItems: [], // Filtered by search / sort
+    currentItems: [], // Items in active directory
+    filteredItems: [],
     searchQuery: '',
     sortBy: 'type-name-asc',
     viewMode: localStorage.getItem('docvault_view_mode') || 'grid',
-    searchCache: new Map() // Cache for recursive search indexing
+    
+    // Auth & Upload State
+    isAuthenticated: false,
+    csrfToken: '',
+    selectedUploadPath: '', // e.g. "DevOps/Docker"
+    folderTreeData: null,
+    queuedFiles: [], // Array of File objects
+    uploadingIndex: -1,
+    duplicateContext: null // { file, folderPath }
   };
 
-  // DOM Elements
+  // Public DOM Elements
   const searchInput = document.getElementById('search-input');
   const clearSearchBtn = document.getElementById('clear-search');
   const sortSelect = document.getElementById('sort-select');
   const btnGridView = document.getElementById('btn-grid-view');
   const btnListView = document.getElementById('btn-list-view');
   const btnRefresh = document.getElementById('btn-refresh');
-
   const btnBack = document.getElementById('btn-back');
   const breadcrumbsNav = document.getElementById('breadcrumbs');
 
@@ -42,7 +49,7 @@
   const folderCountEl = document.getElementById('folder-count');
   const fileCountEl = document.getElementById('file-count');
 
-  // Modal Elements
+  // Preview Modal Elements
   const viewerModal = document.getElementById('viewer-modal');
   const modalTitle = document.getElementById('modal-title');
   const modalExtBadge = document.getElementById('modal-ext-badge');
@@ -51,7 +58,43 @@
   const modalCloseBtn = document.getElementById('modal-close-btn');
   const modalBody = document.getElementById('modal-body');
 
-  // File Extension Categories & Icons
+  // Admin Auth & Upload Elements
+  const btnOpenUpload = document.getElementById('btn-open-upload');
+  const authModal = document.getElementById('auth-modal');
+  const authForm = document.getElementById('auth-form');
+  const authPasswordInput = document.getElementById('auth-password-input');
+  const authErrorMsg = document.getElementById('auth-error-msg');
+  const authCancelBtn = document.getElementById('auth-cancel-btn');
+  const authCloseBtn = document.getElementById('auth-close-btn');
+
+  const uploadModal = document.getElementById('upload-modal');
+  const uploadCloseBtn = document.getElementById('upload-close-btn');
+  const btnAdminLogout = document.getElementById('btn-admin-logout');
+
+  const selectedFolderDisplay = document.getElementById('selected-folder-display');
+  const folderTreeContainer = document.getElementById('folder-tree-container');
+
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('file-input');
+  const fileQueueContainer = document.getElementById('file-queue-container');
+  const queueCountEl = document.getElementById('queue-count');
+  const fileQueueList = document.getElementById('file-queue-list');
+
+  const overallProgressBox = document.getElementById('overall-progress-box');
+  const progressStatusText = document.getElementById('progress-status-text');
+  const overallProgressPct = document.getElementById('overall-progress-pct');
+  const overallProgressFill = document.getElementById('overall-progress-fill');
+
+  const btnClearQueue = document.getElementById('btn-clear-queue');
+  const btnStartUpload = document.getElementById('btn-start-upload');
+
+  // Duplicate Modal Elements
+  const duplicateModal = document.getElementById('duplicate-modal');
+  const duplicateMsgText = document.getElementById('duplicate-msg-text');
+  const btnDupCancel = document.getElementById('btn-dup-cancel');
+  const btnDupReplace = document.getElementById('btn-dup-replace');
+
+  // File Extension Categories & Metadata
   const extensionMap = {
     pdf: { category: 'pdf', label: 'PDF', iconClass: 'type-pdf' },
     doc: { category: 'doc', label: 'DOC', iconClass: 'type-doc' },
@@ -70,6 +113,12 @@
     svg: { category: 'image', label: 'SVG', iconClass: 'type-image' },
     webp: { category: 'image', label: 'WEBP', iconClass: 'type-image' },
 
+    mp4: { category: 'video', label: 'MP4', iconClass: 'type-video' },
+    webm: { category: 'video', label: 'WEBM', iconClass: 'type-video' },
+    mkv: { category: 'video', label: 'MKV', iconClass: 'type-video' },
+    mov: { category: 'video', label: 'MOV', iconClass: 'type-video' },
+    avi: { category: 'video', label: 'AVI', iconClass: 'type-video' },
+
     zip: { category: 'archive', label: 'ZIP', iconClass: 'type-archive' },
     tar: { category: 'archive', label: 'TAR', iconClass: 'type-archive' },
     gz: { category: 'archive', label: 'GZ', iconClass: 'type-archive' },
@@ -82,9 +131,26 @@
   async function init() {
     setupEventListeners();
     applyViewMode(state.viewMode);
-    
-    // Read initial location from URL Hash (e.g. #/Linux/RHCSA)
+    await checkAuthStatus();
     parseHashAndNavigate();
+  }
+
+  /**
+   * Check Auth Status
+   */
+  async function checkAuthStatus() {
+    try {
+      const res = await fetch('/api/auth/status');
+      if (res.ok) {
+        const data = await res.json();
+        state.isAuthenticated = !!data.authenticated;
+        if (data.csrfToken) {
+          state.csrfToken = data.csrfToken;
+        }
+      }
+    } catch (e) {
+      state.isAuthenticated = false;
+    }
   }
 
   /**
@@ -135,7 +201,6 @@
       const data = await response.json();
 
       if (Array.isArray(data)) {
-        // Filter out hidden items starting with '.'
         const items = data.filter(item => item.name && !item.name.startsWith('.'));
 
         state.currentItems = await Promise.all(items.map(async item => {
@@ -172,7 +237,7 @@
   }
 
   /**
-   * Fetch item count inside a subfolder
+   * Fetch item count inside subfolder
    */
   async function fetchFolderItemCount(pathArray) {
     try {
@@ -186,9 +251,7 @@
           return data.filter(item => item.name && !item.name.startsWith('.')).length;
         }
       }
-    } catch (e) {
-      // Ignore background count errors
-    }
+    } catch (e) {}
     return 0;
   }
 
@@ -198,7 +261,6 @@
   function applyFilterAndSort() {
     let result = [...state.currentItems];
 
-    // Filter by search query
     if (state.searchQuery.trim() !== '') {
       const q = state.searchQuery.toLowerCase();
       result = result.filter(item => 
@@ -206,7 +268,6 @@
       );
     }
 
-    // Sort items
     result.sort((a, b) => {
       if (state.sortBy === 'type-name-asc') {
         if (a.isFolder && !b.isFolder) return -1;
@@ -276,7 +337,7 @@
   }
 
   /**
-   * Render Grid View Cards (Folders & Files)
+   * Render Grid View Cards
    */
   function renderGridView() {
     documentsGrid.innerHTML = state.filteredItems.map(item => {
@@ -334,7 +395,7 @@
                   <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                   <circle cx="12" cy="12" r="3"></circle>
                 </svg>
-                View
+                ${extInfo.category === 'video' ? 'Play' : 'View'}
               </button>
               <a href="${item.url}" download class="btn-card-action btn-download-primary">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -352,7 +413,7 @@
   }
 
   /**
-   * Render List View Rows (Folders & Files)
+   * Render List View Rows
    */
   function renderListView() {
     listTbody.innerHTML = state.filteredItems.map(item => {
@@ -426,17 +487,15 @@
   }
 
   /**
-   * Render Breadcrumbs Navigation & Back Button UI
+   * Render Navigation Bar UI
    */
   function updateNavigationUI() {
-    // Back Button status
     if (state.currentPath.length > 0) {
       btnBack.classList.remove('hidden');
     } else {
       btnBack.classList.add('hidden');
     }
 
-    // Breadcrumbs Bar
     let html = `
       <a href="#" class="breadcrumb-item ${state.currentPath.length === 0 ? 'active' : ''}" onclick="window.DocPortal.navigateToBreadcrumb(-1); return false;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -459,7 +518,6 @@
 
     breadcrumbsNav.innerHTML = html;
 
-    // Header Title
     if (state.currentPath.length === 0) {
       currentFolderTitle.innerHTML = 'Location: <strong>Documents Root</strong>';
     } else {
@@ -469,7 +527,7 @@
   }
 
   /**
-   * Open Modal Document Viewer
+   * Open Modal Document & Video Viewer
    */
   async function openViewer(name, url, ext) {
     modalTitle.textContent = name;
@@ -486,6 +544,13 @@
       modalBody.innerHTML = `<iframe class="modal-iframe" src="${url}" title="PDF Preview"></iframe>`;
     } else if (extInfo.category === 'image') {
       modalBody.innerHTML = `<img class="modal-image" src="${url}" alt="${escapeHTML(name)}">`;
+    } else if (ext === 'mp4' || ext === 'webm') {
+      modalBody.innerHTML = `
+        <video class="modal-video-preview" controls autoplay preload="metadata">
+          <source src="${url}" type="video/${ext}">
+          Your browser does not support HTML5 video preview.
+        </video>
+      `;
     } else if (['txt', 'md', 'csv', 'json', 'log'].includes(ext)) {
       try {
         const textRes = await fetch(url);
@@ -524,11 +589,250 @@
     modalBody.innerHTML = '';
   }
 
+  /* ==========================================================================
+     Admin Auth & Upload Drawer Logic
+     ========================================================================== */
+
+  function handleOpenUploadClick() {
+    if (state.isAuthenticated) {
+      openUploadDrawer();
+    } else {
+      authPasswordInput.value = '';
+      authErrorMsg.classList.add('hidden');
+      authModal.classList.remove('hidden');
+      authPasswordInput.focus();
+    }
+  }
+
+  async function handleAuthSubmit(e) {
+    e.preventDefault();
+    const password = authPasswordInput.value;
+    authErrorMsg.classList.add('hidden');
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        state.isAuthenticated = true;
+        state.csrfToken = data.csrfToken || '';
+        authModal.classList.add('hidden');
+        openUploadDrawer();
+      } else {
+        const errData = await res.json();
+        authErrorMsg.textContent = errData.detail || 'Invalid credentials.';
+        authErrorMsg.classList.remove('hidden');
+      }
+    } catch (err) {
+      authErrorMsg.textContent = 'Server error. Please try again.';
+      authErrorMsg.classList.remove('hidden');
+    }
+  }
+
+  async function handleAdminLogout() {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (e) {}
+    state.isAuthenticated = false;
+    uploadModal.classList.add('hidden');
+  }
+
+  async function openUploadDrawer() {
+    // Default selected path to current viewing folder if any
+    state.selectedUploadPath = state.currentPath.join('/');
+    selectedFolderDisplay.textContent = state.selectedUploadPath ? `Documents / ${state.selectedUploadPath}` : 'Documents Root';
+    
+    uploadModal.classList.remove('hidden');
+    await fetchAndRenderFolderTree();
+  }
+
+  async function fetchAndRenderFolderTree() {
+    folderTreeContainer.innerHTML = '<div style="padding: 1rem; color: var(--text-muted);">Loading folder tree...</div>';
+    try {
+      const res = await fetch('/api/folders');
+      if (res.ok) {
+        state.folderTreeData = await res.json();
+        renderFolderTree();
+      }
+    } catch (err) {
+      folderTreeContainer.innerHTML = '<div style="padding: 1rem; color: var(--danger);">Failed to load folders.</div>';
+    }
+  }
+
+  function renderFolderTree() {
+    if (!state.folderTreeData) return;
+
+    function buildNodeHTML(node) {
+      const isSelected = node.path === state.selectedUploadPath;
+      const displayName = node.name === 'Documents' ? '📁 Documents Root' : `📁 ${escapeHTML(node.name)}`;
+
+      let html = `
+        <div class="tree-node ${isSelected ? 'selected' : ''}" data-path="${escapeHTML(node.path)}">
+          <span>${displayName}</span>
+        </div>
+      `;
+
+      if (node.children && node.children.length > 0) {
+        html += `<div class="tree-children">`;
+        node.children.forEach(child => {
+          html += buildNodeHTML(child);
+        });
+        html += `</div>`;
+      }
+      return html;
+    }
+
+    folderTreeContainer.innerHTML = buildNodeHTML(state.folderTreeData);
+
+    // Add node click listeners
+    folderTreeContainer.querySelectorAll('.tree-node').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        folderTreeContainer.querySelectorAll('.tree-node').forEach(n => n.classList.remove('selected'));
+        el.classList.add('selected');
+
+        state.selectedUploadPath = el.dataset.path;
+        selectedFolderDisplay.textContent = state.selectedUploadPath ? `Documents / ${state.selectedUploadPath}` : 'Documents Root';
+      });
+    });
+  }
+
+  /* File Queue & Drag Drop Logic */
+  function addFilesToQueue(files) {
+    for (let i = 0; i < files.length; i++) {
+      state.queuedFiles.push(files[i]);
+    }
+    renderFileQueue();
+  }
+
+  function renderFileQueue() {
+    if (state.queuedFiles.length === 0) {
+      fileQueueContainer.classList.add('hidden');
+      return;
+    }
+
+    fileQueueContainer.classList.remove('hidden');
+    queueCountEl.textContent = state.queuedFiles.length;
+
+    fileQueueList.innerHTML = state.queuedFiles.map((file, idx) => `
+      <div class="queue-item">
+        <div class="queue-item-info">
+          <span class="queue-item-name" title="${escapeHTML(file.name)}">${escapeHTML(file.name)}</span>
+          <span class="queue-item-size">(${formatFileSize(file.size)})</span>
+        </div>
+        <button class="queue-item-remove" onclick="window.DocPortal.removeQueueItem(${idx})">✕</button>
+      </div>
+    `).join('');
+  }
+
+  function removeQueueItem(index) {
+    state.queuedFiles.splice(index, 1);
+    renderFileQueue();
+  }
+
+  function clearQueue() {
+    state.queuedFiles = [];
+    renderFileQueue();
+    overallProgressBox.classList.add('hidden');
+  }
+
+  async function startUploadQueue(replaceFlag = false) {
+    if (state.queuedFiles.length === 0) return;
+
+    overallProgressBox.classList.remove('hidden');
+    btnStartUpload.disabled = true;
+
+    let successCount = 0;
+    const totalFiles = state.queuedFiles.length;
+
+    for (let i = 0; i < state.queuedFiles.length; i++) {
+      const file = state.queuedFiles[i];
+      progressStatusText.textContent = `Uploading file ${i + 1} of ${totalFiles}: ${file.name}...`;
+
+      try {
+        const result = await uploadSingleFile(file, state.selectedUploadPath, replaceFlag);
+        if (result.status === 'exists') {
+          // Open duplicate prompt
+          state.duplicateContext = { fileIndex: i, file, folderPath: state.selectedUploadPath };
+          duplicateMsgText.textContent = `File "${file.name}" already exists in ${state.selectedUploadPath || 'Documents Root'}. Do you want to replace it?`;
+          duplicateModal.classList.remove('hidden');
+          return; // Pause queue until user decides
+        }
+        successCount++;
+      } catch (err) {
+        alert(`Failed to upload ${file.name}: ${err.message}`);
+      }
+
+      const pct = Math.round(((i + 1) / totalFiles) * 100);
+      overallProgressPct.textContent = `${pct}%`;
+      overallProgressFill.style.width = `${pct}%`;
+    }
+
+    progressStatusText.textContent = `Upload complete! (${successCount} files uploaded)`;
+    btnStartUpload.disabled = false;
+    
+    // Clear queue after delay and refresh public view
+    setTimeout(() => {
+      clearQueue();
+      uploadModal.classList.add('hidden');
+      loadCurrentFolder();
+    }, 1200);
+  }
+
+  function uploadSingleFile(file, folderPath, replace = false) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('folderPath', folderPath);
+      formData.append('replace', replace ? 'true' : 'false');
+
+      xhr.open('POST', '/api/upload', true);
+      if (state.csrfToken) {
+        xhr.setRequestHeader('X-CSRF-Token', state.csrfToken);
+      }
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const filePct = Math.round((e.loaded / e.total) * 100);
+          overallProgressPct.textContent = `${filePct}%`;
+          overallProgressFill.style.width = `${filePct}%`;
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data);
+          } catch (e) {
+            resolve({ status: 'success' });
+          }
+        } else if (xhr.status === 409) {
+          resolve({ status: 'exists' });
+        } else {
+          try {
+            const errData = JSON.parse(xhr.responseText);
+            reject(new Error(errData.detail || `HTTP ${xhr.status}`));
+          } catch (e) {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Network error during file upload'));
+      xhr.send(formData);
+    });
+  }
+
   /**
-   * Event Listeners
+   * Event Listeners Setup
    */
   function setupEventListeners() {
-    // Hash change event (Browser Back / Forward buttons)
     window.addEventListener('hashchange', parseHashAndNavigate);
 
     // Search Input
@@ -553,40 +857,93 @@
       applyFilterAndSort();
     });
 
-    // Back Button
+    // Navigation Controls
     btnBack.addEventListener('click', () => {
       if (state.currentPath.length > 0) {
         setPath(state.currentPath.slice(0, -1));
       }
     });
 
-    // Sort Selector
     sortSelect.addEventListener('change', (e) => {
       state.sortBy = e.target.value;
       applyFilterAndSort();
     });
 
-    // View Mode Toggle
     btnGridView.addEventListener('click', () => applyViewMode('grid'));
     btnListView.addEventListener('click', () => applyViewMode('list'));
-
     btnRefresh.addEventListener('click', () => loadCurrentFolder());
 
-    // Modal Close
+    // Admin Auth Listeners
+    btnOpenUpload.addEventListener('click', handleOpenUploadClick);
+    authForm.addEventListener('submit', handleAuthSubmit);
+    authCancelBtn.addEventListener('click', () => authModal.classList.add('hidden'));
+    authCloseBtn.addEventListener('click', () => authModal.classList.add('hidden'));
+    btnAdminLogout.addEventListener('click', handleAdminLogout);
+
+    uploadCloseBtn.addEventListener('click', () => uploadModal.classList.add('hidden'));
+
+    // Drag & Drop Dropzone Listeners
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        addFilesToQueue(e.dataTransfer.files);
+      }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        addFilesToQueue(e.target.files);
+      }
+    });
+
+    btnClearQueue.addEventListener('click', clearQueue);
+    btnStartUpload.addEventListener('click', () => startUploadQueue(false));
+
+    // Duplicate File Modal Buttons
+    btnDupCancel.addEventListener('click', () => {
+      duplicateModal.classList.add('hidden');
+      state.duplicateContext = null;
+    });
+
+    btnDupReplace.addEventListener('click', async () => {
+      duplicateModal.classList.add('hidden');
+      if (state.duplicateContext) {
+        const { file } = state.duplicateContext;
+        try {
+          await uploadSingleFile(file, state.selectedUploadPath, true);
+          alert(`File ${file.name} replaced successfully.`);
+          clearQueue();
+          uploadModal.classList.add('hidden');
+          loadCurrentFolder();
+        } catch (e) {
+          alert(`Failed to replace file: ${e.message}`);
+        }
+      }
+    });
+
+    // Preview Modal Close
     modalCloseBtn.addEventListener('click', closeModal);
     viewerModal.addEventListener('click', (e) => {
       if (e.target === viewerModal) closeModal();
     });
 
-    // Keyboard Shortcuts
+    // Shortcuts
     document.addEventListener('keydown', (e) => {
       if (e.key === '/' && document.activeElement !== searchInput) {
         e.preventDefault();
         searchInput.focus();
       } else if (e.key === 'Escape') {
-        if (!viewerModal.classList.contains('hidden')) {
-          closeModal();
-        }
+        if (!viewerModal.classList.contains('hidden')) closeModal();
+        if (!authModal.classList.contains('hidden')) authModal.classList.add('hidden');
+        if (!uploadModal.classList.contains('hidden')) uploadModal.classList.add('hidden');
       }
     });
   }
@@ -611,7 +968,7 @@
     }
   }
 
-  /* Utility Helper Functions */
+  /* Utility Helpers */
   function navigateToFolder(folderName) {
     setPath([...state.currentPath, folderName]);
   }
@@ -667,6 +1024,8 @@
         return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>`;
       case 'image':
         return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
+      case 'video':
+        return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>`;
       case 'archive':
         return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>`;
       default:
@@ -674,11 +1033,12 @@
     }
   }
 
-  // Export public methods for global handlers
+  // Export public helpers
   window.DocPortal = {
     openViewer,
     navigateToFolder,
-    navigateToBreadcrumb
+    navigateToBreadcrumb,
+    removeQueueItem
   };
 
   // Start App

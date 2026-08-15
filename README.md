@@ -1,86 +1,62 @@
-# Lightweight Public Document Explorer — Folder-Based System
+# Lightweight Public Document Explorer — DocVault V2
 
-A minimal, high-performance, containerized public document portal powered by **Docker**, **Nginx**, and **Vanilla HTML5/CSS/JavaScript**.
+A minimal, high-performance, containerized public document portal powered by **Docker**, **Nginx**, **FastAPI**, and **Vanilla HTML5/CSS/JavaScript**.
 
 The server's **filesystem structure automatically controls the website structure**.
 
+For complete security audit matrix and defense-in-depth report, see **[SECURITY-AUDIT.md](SECURITY-AUDIT.md)**.
+For complete URL routing and API endpoints, see **[LINK-STRUCTURE.md](LINK-STRUCTURE.md)**.
 For step-by-step production server setup with HTTPS & domain names, see **[SERVER-SETUP.md](SERVER-SETUP.md)**.
 
 ---
 
-## 🌟 Key Features
+## 🌟 What's New in V2
 
-- 📁 **Folder-Based Hierarchy**: Folders and subfolders inside `./documents/` automatically appear as categories and subcategories on the website.
-- ⚡ **Zero Rebuild Management**: Create folders or drop files into `./documents/`—changes reflect immediately upon browser refresh!
-- 🥖 **Interactive Breadcrumb Navigation**: Easily jump back and forth between parent and child directories (`Documents > Linux > RHCSA`).
-- 🔍 **Live Search**: Instant search by folder name, file name, or extension.
-- 👁️ **In-Browser Document Preview**: Built-in modal viewer for PDFs, images, text, Markdown, JSON, and CSV files.
-- 📱 **Modern & Responsive UI**: Clean light theme with Grid and List views, responsive on desktop and mobile.
-- 🔒 **Production Security**: Security headers (CSP, X-Frame-Options, X-Content-Type-Options), rate limiting, read-only volume mounts, path traversal prevention, and blocked non-GET HTTP methods.
+- 🔐 **Password-Protected Admin Upload System**: Click `Upload` in the header, enter password (`devpatel` configured in `.env`), and upload files directly from the browser.
+- 📁 **Interactive Destination Folder Tree**: Choose the destination folder from an automatically rendered server folder tree before uploading.
+- 📤 **Drag & Drop Multi-File Uploads**: Drag and drop multiple documents or videos with real-time percentage progress bars.
+- 🎬 **Native Video Player Support**: Browser preview modal plays `.mp4` and `.webm` videos directly with native HTML5 controls; download links provided for `.mkv`, `.avi`, `.mov`.
+- 🛡️ **Duplicate File & Security Validation**:
+  - File extension whitelist & path traversal prevention.
+  - Interactive prompt when uploading duplicate files ("Replace / Skip").
+  - 100MB configurable upload file size limit (`MAX_FILE_SIZE_MB`).
+  - Brute-force rate limiting on login attempts.
+- 🙈 **Git Document Isolation**: Actual documents in `documents/` are excluded from Git via `.gitignore` (`!documents/.gitkeep`), so `git pull` on the server will **never** delete or overwrite your published files.
 
 ---
 
-## 📂 Example Folder Structure
+## 📁 V2 Architecture & Project Structure
 
 ```text
-documents/
-├── Linux/
-│   ├── RHCSA/
-│   │   ├── Task1-UserManagement.txt
-│   │   └── Task2-Permissions.txt
-│   └── Linux-Commands-Guide.pdf
-├── AWS/
-│   ├── EC2-Architecture.json
-│   └── S3-Best-Practices.csv
-├── DevOps/
-│   ├── Docker-CheatSheet.md
-│   └── Kubernetes-Setup.txt
-└── Empty-Folder/
-```
-
-The website automatically renders:
-
-```text
-Documents
-
-📁 Linux
-📁 AWS
-📁 DevOps
-📁 Empty-Folder
-```
-
-Opening `Linux` displays:
-
-```text
-Documents / Linux
-
-← Back
-
-📁 RHCSA
-📄 Linux-Commands-Guide.pdf
-📄 Linux-Commands-Guide.txt
-```
-
-Opening `RHCSA` displays:
-
-```text
-Documents / Linux / RHCSA
-
-← Back
-
-📄 Task1-UserManagement.txt
-📄 Task2-Permissions.txt
+doc-website/
+├── docker-compose.yml       # Docker Compose setup (Nginx + FastAPI)
+├── .env                     # Admin password & upload configuration
+├── .gitignore               # Keeps actual documents out of Git
+├── README.md                # Project documentation
+├── SERVER-SETUP.md          # Production Linux server deployment guide
+├── app/                     # FastAPI Admin Backend Service
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── main.py              # Auth, Folder Tree API, Upload validation logic
+├── nginx/
+│   └── nginx.conf           # Security headers, static serving, /api/ reverse proxy
+├── website/                 # Web Application Frontend
+│   ├── index.html           # Public UI + Admin Upload Drawer + Video Modal
+│   ├── style.css            # Responsive Vanilla CSS stylesheet
+│   └── script.js            # Vanilla JS folder traversal & upload queue engine
+└── documents/               # Public document repository (Host mounted)
+    └── .gitkeep
 ```
 
 ---
 
-## 🚀 Quick Start (Local Development & Testing)
+## 🚀 Quick Start (Local Development)
 
-### 1. Launch Container
+### 1. Launch Services
 Run from the project root:
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
 ### 2. Access Web Portal
@@ -90,67 +66,30 @@ Open your browser and visit:
 http://localhost:8085
 ```
 
----
-
-## 📄 Administrator Document Workflow
-
-No code changes or container rebuilds are required.
-
-### Create a Category Folder
-```bash
-mkdir documents/Networking
-```
-
-### Create a Subcategory Folder
-```bash
-mkdir documents/Linux/RHCE
-```
-
-### Add a Document
-```bash
-cp /path/to/guide.pdf documents/Linux/RHCE/
-```
-
-### Remove a Document or Folder
-```bash
-rm documents/Linux/old-file.pdf
-rm -r documents/OldFolder
-```
-
-Refresh your browser window to see the updated folder structure immediately.
+### 3. Test Admin Upload
+1. Click the **Upload** button in the top header.
+2. Enter password: `devpatel` (or value set in `.env`).
+3. Select your target folder (e.g. `DevOps`).
+4. Drag & drop files or click **Choose Files**, then click **Start Upload**.
 
 ---
 
-## 🔒 Production Deployment & HTTPS Setup
+## ⚙️ Environment Configuration (`.env`)
 
-### 1. Configure Ports in `docker-compose.yml`
-In production, map port `80` and `443` directly:
+Edit `.env` to customize administrator settings:
 
-```yaml
-ports:
-  - "80:80"
-  - "443:443"
+```env
+UPLOAD_PASSWORD=devpatel
+MAX_FILE_SIZE_MB=100
+SESSION_SECRET=docvault_super_secret_session_key_2026
 ```
-
-### 2. HTTPS with Let's Encrypt (Certbot)
-
-1. Obtain certificate using standalone mode:
-   ```bash
-   sudo certbot certonly --standalone -d your-domain.com
-   ```
-2. Mount certificates into Nginx in `docker-compose.yml`:
-   ```yaml
-   volumes:
-     - /etc/letsencrypt:/etc/letsencrypt:ro
-   ```
-3. Enable SSL server block in `nginx/nginx.conf`.
 
 ---
 
-## 💾 Backup
+## 🔒 Security Summary
 
-To create a full backup of all documents and configuration:
-
-```bash
-tar -czvf docvault-backup-$(date +%F).tar.gz documents/ website/ nginx/ docker-compose.yml
-```
+1. **Public Reading**: Public users browse, search, preview, and download documents without logging in.
+2. **Admin Uploading**: Only requests with valid HTTP-only session cookies can post uploads or view folder trees.
+3. **Nginx Direct File Serving**: Nginx directly streams large PDFs, ZIPs, and video files to clients without passing through Python/FastAPI.
+4. **Read-Only Nginx Mount**: Nginx container volume is `:ro`, while FastAPI volume is `:rw`.
+5. **Path Traversal Shield**: Resolves canonical target paths to ensure uploaded files can never escape `/documents`.
