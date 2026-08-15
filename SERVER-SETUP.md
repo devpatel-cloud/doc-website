@@ -6,10 +6,10 @@ Complete step-by-step production deployment guide for **DocVault V2** on Ubuntu 
 
 ## 🔒 Document Directory Permissions (Least-Privilege Model)
 
-To allow the non-root FastAPI process (`UID 100` / `GID 101`) to write uploaded files while preserving owner access for host user (`dev_patel`) and read-only access for Nginx, configure Linux group permissions on `./documents`:
+To allow the non-root FastAPI process (`UID 100` / `GID 101`) to write uploaded files while preserving owner access for host user (`dev_patel`) and read-only access for Nginx, run these three commands on your server in `/opt/docvault`:
 
 ```bash
-# 1. Set group ownership of ./documents to GID 101 (appgroup / nginx)
+# 1. Assign group ownership of ./documents to GID 101 (appgroup / nginx)
 sudo chown -R $USER:101 ./documents
 
 # 2. Set mode 775 (Owner: rwx, Group 101: rwx, Others: r-x)
@@ -20,18 +20,17 @@ sudo chmod g+s ./documents
 ```
 
 > [!IMPORTANT]
-> **Least Privilege Assurance**:
-> - NO `chmod 777` or `chmod -R 777` permissions are used.
-> - FastAPI container runs as non-root user `appuser` (`UID 100`, `GID 101`).
-> - Nginx container mounts `./documents` as read-only (`:ro`).
-> - All uploaded files are assigned mode `664` (`rw-rw-r--`) non-executable permissions.
+> **Why This Works**:
+> - Group GID `101` is shared between FastAPI (`appuser`, `UID 100:GID 101`) and Nginx (`nginx`, `UID 101:GID 101`).
+> - Mode `775` grants group write permissions without exposing `777` permissions to other users.
+> - The `setgid` bit (`g+s`) ensures any new folder created by FastAPI or the host user automatically inherits group `101` and mode `775`.
 
 ---
 
 ## 📋 Environment Configuration & Secret Setup
 
 ### 1. Copy Environment Template
-On your production server, copy the template file `.env.example` to create your server-side `.env`:
+On your production server, copy `.env.example` to create `.env`:
 
 ```bash
 cp .env.example .env
@@ -90,9 +89,9 @@ docker compose logs fastapi --tail=50
 
 ---
 
-## 🔍 Verification & Health Checks
+## 🔍 Verification & Troubleshooting
 
-### Test Container Write Permissions
+### Check Container Write Access
 Run the touch permission check inside the container:
 
 ```bash
@@ -100,6 +99,11 @@ docker exec docvault-fastapi touch /documents/.upload-permission-test
 docker exec docvault-fastapi rm /documents/.upload-permission-test
 ```
 
-### Test Web Uploads via Browser
-1. Open `https://docs.yourdomain.com` in your browser.
-2. Click **Upload** -> Enter production password -> Select destination folder -> Upload file.
+### Troubleshooting "Permission Denied" Error
+If an upload returns `HTTP 500: Permission denied writing to folder...`, re-run the group ownership setup:
+
+```bash
+sudo chown -R $USER:101 ./documents
+sudo chmod -R 775 ./documents
+sudo chmod g+s ./documents
+```

@@ -23,6 +23,8 @@ To resolve file creation permissions without exposing `777` permissions or runni
    - Permissions set to `775` (`rwxrwxr-x`) with `setgid` bit enabled (`chmod g+s ./documents`).
    - All newly created subdirectories automatically inherit group `101`.
    - Uploaded files are created with non-executable mode `664` (`rw-rw-r--`).
+4. **Volume-Local Staging**:
+   - Temporary uploads stage inside `/documents/.tmp_uploads/` to guarantee same-filesystem atomic `os.rename` file moves without cross-device permission failures.
 
 ---
 

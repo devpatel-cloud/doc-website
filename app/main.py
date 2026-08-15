@@ -36,7 +36,7 @@ ALLOWED_EXTENSIONS = {
     "mp4", "webm", "mkv", "mov", "avi", "m4v", "3gp", "mpeg", "mpg", "ts"
 }
 
-app = FastAPI(title="DocVault Admin Upload API — Hardened V2", version="2.2.0")
+app = FastAPI(title="DocVault Admin Upload API — Hardened V2", version="2.3.0")
 
 class LoginRequest(BaseModel):
     password: str
@@ -103,7 +103,6 @@ async def login(data: LoginRequest, request: Request, response: Response):
     client_ip = request.client.host if request.client else "unknown"
     check_rate_limit(client_ip)
 
-    # Constant-time password comparison against timing attacks
     if secrets.compare_digest(data.password, UPLOAD_PASSWORD):
         session_token = secrets.token_hex(32)
         csrf_token = secrets.token_hex(16)
@@ -163,7 +162,10 @@ async def auth_status(request: Request):
 async def get_folder_tree():
     """Build and return nested folder tree from /documents directory"""
     if not os.path.exists(DOCUMENTS_DIR):
-        os.makedirs(DOCUMENTS_DIR, exist_ok=True)
+        try:
+            os.makedirs(DOCUMENTS_DIR, mode=0o775, exist_ok=True)
+        except Exception:
+            pass
 
     def scan_dir(rel_path: str = ""):
         abs_path = os.path.realpath(os.path.join(DOCUMENTS_DIR, rel_path)) if rel_path else DOCUMENTS_DIR
@@ -252,11 +254,18 @@ async def upload_file(
             detail=f"File extension '.{ext}' is not allowed for security reasons."
         )
 
-    os.makedirs(target_dir, mode=0o775, exist_ok=True)
     try:
-        os.chmod(target_dir, 0o775)
-    except Exception:
-        pass
+        os.makedirs(target_dir, mode=0o775, exist_ok=True)
+        try:
+            os.chmod(target_dir, 0o775)
+        except Exception:
+            pass
+    except PermissionError as pe:
+        logger.error(f"[PERMISSION ERROR] Cannot create directory {target_dir}: {pe}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Permission denied creating folder '{clean_folder_path}'. Please run: sudo chown -R $USER:101 ./documents && sudo chmod -R 775 ./documents"
+        )
 
     target_file_path = os.path.realpath(os.path.join(target_dir, filename))
 
@@ -276,9 +285,16 @@ async def upload_file(
             }
         )
 
-    # Temporary Staging in /tmp/uploads
+    # Use volume-local staging directory for atomic same-filesystem moves
+    staging_dir = os.path.join(DOCUMENTS_DIR, ".tmp_uploads")
+    try:
+        os.makedirs(staging_dir, mode=0o775, exist_ok=True)
+    except Exception:
+        staging_dir = "/tmp/uploads"
+        os.makedirs(staging_dir, mode=0o775, exist_ok=True)
+
     tmp_filename = f"{secrets.token_hex(12)}_{filename}"
-    tmp_path = os.path.join("/tmp/uploads", tmp_filename)
+    tmp_path = os.path.join(staging_dir, tmp_filename)
     max_bytes = MAX_FILE_SIZE_MB * 1024 * 1024
     total_bytes = 0
     header_sample = bytearray()
@@ -333,8 +349,22 @@ async def upload_file(
 
     except HTTPException:
         raise
+    except PermissionError as pe:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+        logger.error(f"[PERMISSION ERROR] Cannot write file to {target_file_path}: {pe}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Permission denied writing to folder '{clean_folder_path}'. Please run: sudo chown -R $USER:101 ./documents && sudo chmod -R 775 ./documents"
+        )
     except Exception as e:
         if os.path.exists(tmp_path):
-            os.remove(tmp_path)
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
         logger.error(f"Internal upload failure: {e}")
-        raise HTTPException(status_code=500, detail="Internal error during file upload processing")
+        raise HTTPException(status_code=500, detail=f"Internal error during file upload processing: {str(e)}")
