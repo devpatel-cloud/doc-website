@@ -15,11 +15,12 @@ from pydantic import BaseModel
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("docvault_backend")
 
-# Environment Variables
-UPLOAD_PASSWORD = os.getenv("UPLOAD_PASSWORD", "devpatel")
-MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "100"))
-MIN_FREE_DISK_GB = float(os.getenv("MIN_FREE_DISK_GB", "1.0"))
-DOCUMENTS_DIR = os.path.realpath(os.getenv("DOCUMENTS_DIR", "/documents"))
+# Standardized Environment Variables (with legacy fallbacks)
+UPLOAD_PASSWORD = os.getenv("DOCVAULT_ADMIN_PASSWORD", os.getenv("UPLOAD_PASSWORD", "devpatel"))
+MAX_FILE_SIZE_MB = int(os.getenv("DOCVAULT_MAX_FILE_SIZE_MB", os.getenv("MAX_FILE_SIZE_MB", "100")))
+MIN_FREE_DISK_GB = float(os.getenv("DOCVAULT_MIN_FREE_DISK_GB", os.getenv("MIN_FREE_DISK_GB", "1.0")))
+DOCUMENTS_DIR = os.path.realpath(os.getenv("DOCVAULT_DOCUMENTS_DIR", os.getenv("DOCUMENTS_DIR", "/documents")))
+SESSION_SECRET = os.getenv("DOCVAULT_SESSION_SECRET", os.getenv("SESSION_SECRET", "docvault_secret_key_2026"))
 
 # Session Store: session_token -> { "created": float, "csrf_token": str }
 valid_sessions: Dict[str, dict] = {}
@@ -35,7 +36,7 @@ ALLOWED_EXTENSIONS = {
     "mp4", "webm", "mkv", "mov", "avi", "m4v", "3gp", "mpeg", "mpg", "ts"
 }
 
-app = FastAPI(title="DocVault Admin Upload API — Hardened V2", version="2.1.0")
+app = FastAPI(title="DocVault Admin Upload API — Hardened V2", version="2.2.0")
 
 class LoginRequest(BaseModel):
     password: str
@@ -69,28 +70,15 @@ def require_auth(request: Request) -> dict:
         )
     return session
 
-def require_csrf(request: Request, x_csrf_token: Optional[str] = Header(None, alias="X-CSRF-Token")):
-    session = require_auth(request)
-    expected_csrf = session.get("csrf_token")
-    if not expected_csrf or not x_csrf_token or not secrets.compare_digest(x_csrf_token, expected_csrf):
-        logger.warning(f"CSRF token mismatch or missing for IP {request.client.host if request.client else 'unknown'}")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="CSRF validation failed"
-        )
-
 def sanitize_filename(filename: str) -> str:
     """Strictly sanitize uploaded filename to prevent directory traversal and injection"""
     filename = os.path.basename(filename or "")
-    # Remove null bytes and control chars
     filename = re.sub(r"[\x00-\x1f\x7f]", "", filename)
-    # Replace dangerous characters with underscore
     filename = re.sub(r'[\\/:*?"<>|]', "_", filename)
-    # Remove leading dots or path traversal sequences
     filename = filename.lstrip(".")
     if not filename:
         filename = f"file_{secrets.token_hex(4)}"
-    return filename[:255] # Max filename length
+    return filename[:255]
 
 def validate_magic_bytes(header_bytes: bytes, ext: str) -> bool:
     """Validate file magic byte signatures for common formats"""
@@ -108,7 +96,6 @@ def validate_magic_bytes(header_bytes: bytes, ext: str) -> bool:
         return header_bytes.startswith(b"PK\x03\x04")
     elif ext in ("mp4", "mov"):
         return b"ftyp" in header_bytes[:32]
-    # For text, md, json, csv, etc., pass magic byte check
     return True
 
 @app.post("/api/auth/login")
@@ -128,7 +115,6 @@ async def login(data: LoginRequest, request: Request, response: Response):
         if client_ip in failed_login_attempts:
             del failed_login_attempts[client_ip]
 
-        # Determine HTTPS secure cookie requirement
         is_https = request.headers.get("X-Forwarded-Proto") == "https" or request.url.scheme == "https"
 
         response.set_cookie(
@@ -182,7 +168,6 @@ async def get_folder_tree():
     def scan_dir(rel_path: str = ""):
         abs_path = os.path.realpath(os.path.join(DOCUMENTS_DIR, rel_path)) if rel_path else DOCUMENTS_DIR
         
-        # Verify boundary safety
         if not abs_path.startswith(DOCUMENTS_DIR) or os.path.islink(abs_path):
             return []
 
@@ -195,11 +180,11 @@ async def get_folder_tree():
 
         for entry in entries:
             if entry.startswith(".") or "/" in entry or "\\" in entry:
-                continue # Exclude hidden & path separators
+                continue
             
             entry_abs = os.path.realpath(os.path.join(abs_path, entry))
             if not entry_abs.startswith(DOCUMENTS_DIR) or os.path.islink(entry_abs):
-                continue # Block symlinks & escape attempts
+                continue
 
             if os.path.isdir(entry_abs):
                 child_rel = os.path.join(rel_path, entry).replace("\\", "/")
@@ -228,7 +213,7 @@ async def upload_file(
     replace: str = Form("false"),
     session: dict = Depends(require_auth)
 ):
-    # Enforce CSRF validation on uploads
+    # CSRF validation
     x_csrf_token = request.headers.get("X-CSRF-Token")
     if not x_csrf_token or not secrets.compare_digest(x_csrf_token, session.get("csrf_token", "")):
         logger.warning("Upload rejected: CSRF token missing or invalid")
@@ -254,7 +239,6 @@ async def upload_file(
     clean_folder_path = folderPath.strip().strip("/").strip("\\")
     target_dir = os.path.realpath(os.path.join(DOCUMENTS_DIR, clean_folder_path))
 
-    # Verify target directory remains strictly inside DOCUMENTS_DIR
     if not target_dir.startswith(DOCUMENTS_DIR) or os.path.islink(target_dir):
         logger.warning(f"Path traversal blocked from IP {client_ip}: {folderPath}")
         raise HTTPException(status_code=400, detail="Invalid destination path")
@@ -268,14 +252,13 @@ async def upload_file(
             detail=f"File extension '.{ext}' is not allowed for security reasons."
         )
 
-    # Ensure target directory exists
     os.makedirs(target_dir, exist_ok=True)
     target_file_path = os.path.realpath(os.path.join(target_dir, filename))
 
     if not target_file_path.startswith(DOCUMENTS_DIR) or os.path.islink(target_file_path):
         raise HTTPException(status_code=400, detail="Forbidden target path")
 
-    # Duplicate File Check
+    # Duplicate File Policy
     is_replace = replace.lower() == "true"
     if os.path.exists(target_file_path) and not is_replace:
         return JSONResponse(
@@ -288,7 +271,7 @@ async def upload_file(
             }
         )
 
-    # Staging upload in /tmp/uploads
+    # Temporary Staging in /tmp/uploads
     tmp_filename = f"{secrets.token_hex(12)}_{filename}"
     tmp_path = os.path.join("/tmp/uploads", tmp_filename)
     max_bytes = MAX_FILE_SIZE_MB * 1024 * 1024
@@ -297,7 +280,7 @@ async def upload_file(
 
     try:
         with open(tmp_path, "wb") as buffer:
-            while chunk := await file.read(1024 * 1024): # 1MB chunks
+            while chunk := await file.read(1024 * 1024):
                 total_bytes += len(chunk)
                 if len(header_sample) < 2048:
                     header_sample.extend(chunk[:2048 - len(header_sample)])
@@ -323,7 +306,7 @@ async def upload_file(
                 detail=f"File signature does not match declared extension '.{ext}'"
             )
 
-        # Atomic Move to destination with non-executable permissions (0o644)
+        # Atomic Move to destination with safe non-executable permissions (0o644)
         shutil.move(tmp_path, target_file_path)
         os.chmod(target_file_path, 0o644)
 

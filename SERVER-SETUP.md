@@ -1,158 +1,120 @@
-# Production Server Setup Guide — DocVault V2
+# Production Server Deployment Guide — DocVault V2
 
-Complete production deployment guide for **DocVault V2** on Ubuntu 22.04 / 24.04 LTS servers with **Docker**, **Nginx**, **FastAPI**, **Let's Encrypt HTTPS**, and **UFW Firewall**.
-
----
-
-## 📋 Prerequisites
-
-1. Linux server with root or `sudo` access.
-2. Domain name (e.g. `docs.yourdomain.com`) pointing to server Public IP (`A` record) and IPv6 (`AAAA` record).
-3. Open ports: `80` (HTTP), `443` (HTTPS), `22` (SSH).
+Complete step-by-step production deployment guide for **DocVault V2** on Ubuntu 22.04 / 24.04 LTS Linux servers using **Docker Compose**, **Nginx**, **FastAPI**, and **Let's Encrypt HTTPS**.
 
 ---
 
-## 🛠️ Step 1: Server Setup & Dependencies
+## 📋 Environment Configuration & Secret Setup
+
+### 1. Copy Environment Template
+On your production server, copy the template file `.env.example` to create your server-side `.env`:
 
 ```bash
-# Update system
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y curl git ufw certbot
-
-# Install Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-sudo usermod -aG docker $USER
-newgrp docker
+cp .env.example .env
 ```
 
----
-
-## 📂 Step 2: Clone & Environment Configuration
-
-Create application directory `/opt/docvault`:
-
-```bash
-sudo mkdir -p /opt/docvault
-sudo chown -R $USER:$USER /opt/docvault
-cd /opt/docvault
-
-# Clone repository
-git clone https://github.com/yourusername/doc-website.git .
-```
-
-Create production `.env` file:
+### 2. Configure Production Secrets
+Edit `.env` to set your strong production administrator password and custom limits:
 
 ```bash
 nano .env
 ```
 
-Add your secure password:
+Set the environment variables:
 
 ```env
-UPLOAD_PASSWORD=YourStrongProductionPassword123!
-MAX_FILE_SIZE_MB=100
-SESSION_SECRET=GenerateRandomSecretString64CharsLong
-```
+# Administrator Password for Web Portal Uploads (REQUIRED IN PRODUCTION)
+DOCVAULT_ADMIN_PASSWORD=YourStrongProductionPassword123!
 
----
+# Maximum Allowed Upload File Size in Megabytes
+DOCVAULT_MAX_FILE_SIZE_MB=100
 
-## 🔑 Step 3: SSL Certificate Setup (Let's Encrypt)
+# Minimum Free Disk Space Threshold in Gigabytes before rejecting uploads
+DOCVAULT_MIN_FREE_DISK_GB=1.0
 
-```bash
-sudo certbot certonly --standalone -d docs.yourdomain.com
-```
-
----
-
-## ⚙️ Step 4: Configure Production Docker Compose & Nginx
-
-### 1. Update `docker-compose.yml` Ports
-Edit `docker-compose.yml` to bind Nginx to ports `80` and `443`:
-
-```yaml
-services:
-  fastapi:
-    build: ./app
-    container_name: docvault-fastapi
-    restart: unless-stopped
-    env_file:
-      - .env
-    volumes:
-      - ./documents:/documents:rw
-    expose:
-      - "8000"
-
-  document-server:
-    image: nginx:1.25-alpine
-    container_name: docvault-server
-    restart: unless-stopped
-    depends_on:
-      - fastapi
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./website:/var/www/website:ro
-      - ./documents:/var/www/documents:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-```
-
-### 2. Configure `nginx/nginx.conf` for Production HTTPS
-
-Ensure `nginx/nginx.conf` includes your SSL certificates:
-
-```nginx
-server {
-    listen 80;
-    server_name docs.yourdomain.com;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name docs.yourdomain.com;
-
-    ssl_certificate /etc/letsencrypt/live/docs.yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/docs.yourdomain.com/privkey.pem;
-
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    # Include standard V2 locations for /, /api/documents/, /api/, and /documents/
-}
-```
-
----
-
-## 🚀 Step 5: Launch Services
-
-```bash
-# Enable Firewall
-sudo ufw allow 22/tcp
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw --force enable
-
-# Launch Docker Compose
-docker compose up -d --build
-
-# Verify Container Status
-docker compose ps
-```
-
----
-
-## 🔄 Step 6: Git Pull & Deployment Safety
-
-When updating the application code in production:
-
-```bash
-cd /opt/docvault
-git pull
-docker compose up -d --build
+# Cryptographically Secret Session Key
+DOCVAULT_SESSION_SECRET=GenerateRandomSecretString64CharsLong
 ```
 
 > [!IMPORTANT]
-> Because `.gitignore` excludes `documents/*`, running `git pull` will **never** delete, overwrite, or modify your published documents on the server!
+> **Zero Password Hardcoding**: `DOCVAULT_ADMIN_PASSWORD` is supplied strictly through `.env` (or environment). Never commit `.env` to Git repository.
+
+### 3. Restrict File Permissions
+Apply strict file permissions so only the owner can read/write `.env`:
+
+```bash
+chmod 600 .env
+```
+
+---
+
+## 🚀 Deployment Commands
+
+### 1. Validate Docker Compose Config
+Verify that Docker Compose recognizes your environment variables and YAML structure:
+
+```bash
+docker compose config
+```
+
+### 2. Build Container Images
+Build the FastAPI container image:
+
+```bash
+docker compose build
+```
+
+### 3. Launch Services in Background
+Start both containers in detached mode:
+
+```bash
+docker compose up -d
+```
+
+### 4. Verify Container Health Status
+Confirm that both `docvault-fastapi` and `lightweight-document-server` containers are running and healthy:
+
+```bash
+docker compose ps
+```
+
+Expected output:
+```text
+NAME                          STATUS
+docvault-fastapi              Up (healthy)
+lightweight-document-server   Up (healthy)
+```
+
+---
+
+## 🔍 Diagnostic & Verification Commands
+
+### Inspect Container Logs
+If a container fails to start, inspect detailed logs:
+
+```bash
+# FastAPI backend logs
+docker compose logs fastapi
+
+# Nginx web server logs
+docker compose logs document-server
+```
+
+### Test FastAPI Internal Health Endpoint
+Verify that FastAPI's internal health check endpoint responds:
+
+```bash
+docker exec docvault-fastapi python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/api/auth/status').read().decode())"
+```
+
+Expected output:
+```json
+{"authenticated": false}
+```
+
+### Test Administrator Upload via Web Browser
+1. Open `http://your-server-ip` or `https://docs.yourdomain.com` in your browser.
+2. Click **Upload** in the header navigation bar.
+3. Enter your production password (configured in `DOCVAULT_ADMIN_PASSWORD`).
+4. Choose target destination folder (e.g. `DevOps`).
+5. Drag and drop your documents/videos and click **Start Upload**.

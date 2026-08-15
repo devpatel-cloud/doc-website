@@ -1,15 +1,25 @@
-# Environment files
+# Environment Configuration Files
 .env
+.env.*
+!.env.example
 
-# Document files (exclude actual documents on host, retain folder template)
+# Secrets & Private Keys
+secrets/
+*.pem
+*.key
+*.crt
+
+# Production Public Documents (Server Filesystem controls website)
 documents/*
 !documents/.gitkeep
 
-# Python caches & build files
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Log files
+# Temporary Files & Upload Buffers
+/tmp/
+*.tmp
 *.log
+
+# OS & IDE Metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

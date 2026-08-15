@@ -76,12 +76,20 @@ http://localhost:8085
 
 ## ⚙️ Environment Configuration (`.env`)
 
-Edit `.env` to customize administrator settings:
+On your server, create `.env` from the provided template `.env.example`:
+
+```bash
+cp .env.example .env
+chmod 600 .env
+```
+
+Customize administrator settings in `.env`:
 
 ```env
-UPLOAD_PASSWORD=devpatel
-MAX_FILE_SIZE_MB=100
-SESSION_SECRET=docvault_super_secret_session_key_2026
+DOCVAULT_ADMIN_PASSWORD=YourStrongProductionPassword123!
+DOCVAULT_MAX_FILE_SIZE_MB=100
+DOCVAULT_MIN_FREE_DISK_GB=1.0
+DOCVAULT_SESSION_SECRET=GenerateRandomSecretString64CharsLong
 ```
 
 ---
