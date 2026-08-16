@@ -206,34 +206,68 @@
       const res = await fetch('/api/storage/summary');
       if (res.ok) {
         const data = await res.json();
-        document.getElementById('dash-storage-used').textContent = formatFileSize(data.disk.used);
-        document.getElementById('dash-count-docs').textContent = data.counts.documents;
-        document.getElementById('dash-count-folders').textContent = data.counts.total_folders;
-        document.getElementById('dash-count-videos').textContent = data.counts.videos;
-        document.getElementById('dash-count-isos').textContent = data.counts.isos;
-        document.getElementById('dash-storage-percent').textContent = `${data.disk.used_percent}%`;
+        const dv = data.docvault || {};
+        const disk = data.server_disk || data.disk || {};
+        const cat = data.categories || {};
 
-        // Bar segments
-        const totalCat = data.counts.total_files || 1;
-        document.getElementById('bar-segment-docs').style.width = `${(data.counts.documents / totalCat) * 100}%`;
-        document.getElementById('bar-segment-videos').style.width = `${(data.counts.videos / totalCat) * 100}%`;
-        document.getElementById('bar-segment-isos').style.width = `${(data.counts.isos / totalCat) * 100}%`;
-        document.getElementById('bar-segment-images').style.width = `${(data.counts.images / totalCat) * 100}%`;
-        document.getElementById('bar-segment-archives').style.width = `${(data.counts.archives / totalCat) * 100}%`;
+        document.getElementById('dash-storage-used').textContent = formatFileSize(dv.total_size_bytes || 0);
+        document.getElementById('dash-count-docs').textContent = dv.file_count || data.counts?.total_files || 0;
+        document.getElementById('dash-count-folders').textContent = dv.folder_count || data.counts?.total_folders || 0;
+        document.getElementById('dash-count-videos').textContent = cat.videos?.files || data.counts?.videos || 0;
+        document.getElementById('dash-count-isos').textContent = cat.iso?.files || data.counts?.isos || 0;
+
+        document.getElementById('dash-docvault-size-badge').textContent = `${formatFileSize(dv.total_size_bytes || 0)} Total User Storage`;
+
+        // Bar segments & legend percentages
+        if (cat.documents) {
+          document.getElementById('bar-segment-docs').style.width = `${cat.documents.percentage}%`;
+          document.getElementById('legend-pct-docs').textContent = `${cat.documents.percentage}%`;
+        }
+        if (cat.videos) {
+          document.getElementById('bar-segment-videos').style.width = `${cat.videos.percentage}%`;
+          document.getElementById('legend-pct-videos').textContent = `${cat.videos.percentage}%`;
+        }
+        if (cat.iso) {
+          document.getElementById('bar-segment-isos').style.width = `${cat.iso.percentage}%`;
+          document.getElementById('legend-pct-isos').textContent = `${cat.iso.percentage}%`;
+        }
+        if (cat.images) {
+          document.getElementById('bar-segment-images').style.width = `${cat.images.percentage}%`;
+          document.getElementById('legend-pct-images').textContent = `${cat.images.percentage}%`;
+        }
+        if (cat.archives) {
+          document.getElementById('bar-segment-archives').style.width = `${cat.archives.percentage}%`;
+          document.getElementById('legend-pct-archives').textContent = `${cat.archives.percentage}%`;
+        }
+        if (cat.other) {
+          document.getElementById('bar-segment-other').style.width = `${cat.other.percentage}%`;
+          document.getElementById('legend-pct-other').textContent = `${cat.other.percentage}%`;
+        }
+
+        // Server disk physical stats
+        const usedPct = disk.usage_percent || disk.used_percent || 0;
+        document.getElementById('server-disk-percent').textContent = `${usedPct}%`;
+        document.getElementById('server-disk-bar').style.width = `${usedPct}%`;
+        document.getElementById('server-disk-used').textContent = formatFileSize(disk.used_bytes || disk.used || 0);
+        document.getElementById('server-disk-total').textContent = formatFileSize(disk.total_bytes || disk.total || 0);
+        document.getElementById('server-disk-free').textContent = formatFileSize(disk.free_bytes || disk.free || 0);
 
         // Recent files
         const recentGrid = document.getElementById('dash-recent-files-grid');
-        if (recentGrid && data.largest_files) {
-          recentGrid.innerHTML = data.largest_files.slice(0, 4).map(f => {
+        const recentList = data.recent_files || data.largest_files || [];
+        if (recentGrid && recentList.length > 0) {
+          recentGrid.innerHTML = recentList.slice(0, 4).map(f => {
             const extInfo = extensionMap[f.ext] || { icon: '📄' };
+            const fname = f.filename || f.name;
+            const fsize = f.size_bytes || f.size;
             return `
-              <div class="doc-card" onclick="window.DocPortal.selectFileItem('${escapeJS(f.name)}', '${escapeJS(f.path)}')">
+              <div class="doc-card" onclick="window.DocPortal.selectFileItem('${escapeJS(fname)}', '${escapeJS(f.path)}')">
                 <div class="doc-card-top">
                   <span class="doc-type-icon" style="background: var(--bg-card); font-size: 1.5rem;">${extInfo.icon}</span>
-                  <span style="font-size: 0.75rem; color: var(--primary-light); font-weight: 700;">${formatFileSize(f.size)}</span>
+                  <span style="font-size: 0.75rem; color: var(--primary-light); font-weight: 700;">${formatFileSize(fsize)}</span>
                 </div>
                 <div>
-                  <div class="doc-card-name" title="${escapeHTML(f.name)}">${escapeHTML(f.name)}</div>
+                  <div class="doc-card-name" title="${escapeHTML(fname)}">${escapeHTML(fname)}</div>
                   <div class="doc-card-meta">
                     <span>/${escapeHTML(f.path)}</span>
                   </div>
@@ -886,22 +920,47 @@
       const res = await fetch('/api/storage/summary');
       if (res.ok) {
         const data = await res.json();
+        const dv = data.docvault || {};
+        const disk = data.server_disk || data.disk || {};
+        const cat = data.categories || {};
+
         container.innerHTML = `
+          <div style="margin-bottom: 0.5rem;"><span style="font-size: 0.75rem; font-weight: 700; letter-spacing: 1px; color: var(--primary-light); text-transform: uppercase;">DocVault Storage (/documents)</span></div>
           <div class="storage-overview-card" style="margin-bottom: 1.5rem;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <strong>Disk Space Allocation</strong>
-              <span style="font-weight: 700; color: var(--primary-light);">${data.disk.used_percent}% Used</span>
+              <strong>DocVault Storage Usage</strong>
+              <span style="font-weight: 700; color: var(--primary-light);">${formatFileSize(dv.total_size_bytes || 0)} (${dv.file_count || 0} files, ${dv.folder_count || 0} folders)</span>
             </div>
-            <div class="storage-bar-bg" style="height: 16px; margin: 1rem 0;">
-              <div style="background: var(--primary-gradient); height: 100%; width: ${data.disk.used_percent}%;"></div>
+            <div class="storage-bar-bg" style="height: 14px; margin: 1rem 0;">
+              <div style="background: var(--primary-gradient); height: 100%; width: 100%;"></div>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.8125rem; color: var(--text-muted);">
-              <span>Used: <strong>${formatFileSize(data.disk.used)}</strong></span>
-              <span>Total Capacity: <strong>${formatFileSize(data.disk.total)}</strong></span>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; font-size: 0.8125rem;">
+              <div>📄 Documents: <strong>${formatFileSize(cat.documents?.size_bytes || 0)}</strong> (${cat.documents?.percentage || 0}%)</div>
+              <div>🎥 Videos: <strong>${formatFileSize(cat.videos?.size_bytes || 0)}</strong> (${cat.videos?.percentage || 0}%)</div>
+              <div>💿 ISO Images: <strong>${formatFileSize(cat.iso?.size_bytes || 0)}</strong> (${cat.iso?.percentage || 0}%)</div>
+              <div>🖼️ Images: <strong>${formatFileSize(cat.images?.size_bytes || 0)}</strong> (${cat.images?.percentage || 0}%)</div>
+              <div>📦 Archives: <strong>${formatFileSize(cat.archives?.size_bytes || 0)}</strong> (${cat.archives?.percentage || 0}%)</div>
+              <div>📃 Other: <strong>${formatFileSize(cat.other?.size_bytes || 0)}</strong> (${cat.other?.percentage || 0}%)</div>
             </div>
           </div>
 
-          <h3 style="font-size: 1rem; font-weight: 700; margin-bottom: 1rem;">Top 10 Largest Storage Files</h3>
+          <div style="margin-bottom: 0.5rem;"><span style="font-size: 0.75rem; font-weight: 700; letter-spacing: 1px; color: var(--text-muted); text-transform: uppercase;">Server Physical Disk</span></div>
+          <div class="storage-overview-card" style="margin-bottom: 1.5rem; background: var(--bg-card);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <strong>Physical File System Capacity</strong>
+              <span style="font-weight: 700; color: var(--accent-cyan);">${disk.usage_percent || disk.used_percent || 0}% Disk Used</span>
+            </div>
+            <div class="storage-bar-bg" style="height: 8px; margin: 0.75rem 0;">
+              <div style="background: var(--accent-cyan); height: 100%; width: ${disk.usage_percent || disk.used_percent || 0}%;"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);">
+              <span>Disk Used: <strong>${formatFileSize(disk.used_bytes || disk.used || 0)}</strong></span>
+              <span>Total Capacity: <strong>${formatFileSize(disk.total_bytes || disk.total || 0)}</strong></span>
+              <span>Free Capacity: <strong>${formatFileSize(disk.free_bytes || disk.free || 0)}</strong></span>
+            </div>
+          </div>
+
+          <h3 style="font-size: 1rem; font-weight: 700; margin-bottom: 1rem;">Top 10 Largest User Storage Files</h3>
           <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); overflow: hidden;">
             <table class="documents-list-table">
               <thead>
@@ -913,10 +972,10 @@
               </thead>
               <tbody>
                 ${(data.largest_files || []).map(f => `
-                  <tr onclick="window.DocPortal.selectFileItem('${escapeJS(f.name)}', '${escapeJS(f.path)}')">
-                    <td><strong>📄 ${escapeHTML(f.name)}</strong></td>
+                  <tr onclick="window.DocPortal.selectFileItem('${escapeJS(f.filename || f.name)}', '${escapeJS(f.path)}')">
+                    <td><strong>📄 ${escapeHTML(f.filename || f.name)}</strong></td>
                     <td><code style="font-size: 0.75rem; color: var(--text-muted);">/${escapeHTML(f.path)}</code></td>
-                    <td style="text-align: right; color: var(--primary-light); font-weight: 700;">${formatFileSize(f.size)}</td>
+                    <td style="text-align: right; color: var(--primary-light); font-weight: 700;">${formatFileSize(f.size_bytes || f.size)}</td>
                   </tr>
                 `).join('')}
               </tbody>

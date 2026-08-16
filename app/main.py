@@ -21,7 +21,13 @@ logger = logging.getLogger("docvault_backend")
 RAW_ADMIN_PASSWORD = os.getenv("DOCVAULT_ADMIN_PASSWORD", os.getenv("UPLOAD_PASSWORD", "")).strip()
 MAX_FILE_SIZE_MB = int(os.getenv("DOCVAULT_MAX_FILE_SIZE_MB", os.getenv("MAX_FILE_SIZE_MB", "20480")))
 MIN_FREE_DISK_GB = float(os.getenv("DOCVAULT_MIN_FREE_DISK_GB", os.getenv("MIN_FREE_DISK_GB", "2.5")))
-DOCUMENTS_DIR = os.path.realpath(os.getenv("DOCVAULT_DOCUMENTS_DIR", os.getenv("DOCUMENTS_DIR", "/documents")))
+_env_doc_dir = os.getenv("DOCVAULT_DOCUMENTS_DIR", os.getenv("DOCUMENTS_DIR", ""))
+if _env_doc_dir:
+    DOCUMENTS_DIR = os.path.realpath(_env_doc_dir)
+else:
+    _fallback = "/documents" if os.path.exists("/documents") else os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "documents"))
+    DOCUMENTS_DIR = os.path.realpath(_fallback)
+os.makedirs(DOCUMENTS_DIR, exist_ok=True)
 SESSION_SECRET = os.getenv("DOCVAULT_SESSION_SECRET", os.getenv("SESSION_SECRET", "docvault_secret_key_2026"))
 TRASH_RETENTION_DAYS = int(os.getenv("DOCVAULT_TRASH_RETENTION_DAYS", "30"))
 CHUNK_SIZE_MB = int(os.getenv("DOCVAULT_CHUNK_SIZE_MB", "8"))
@@ -889,30 +895,44 @@ async def permanent_delete_trash(trash_id: str, request: Request, session: dict 
 
 # --- Storage Dashboard & Server-Side Search Endpoints ---
 
+def format_size_human(bytes_size: int) -> str:
+    if not bytes_size or bytes_size == 0:
+        return "0 B"
+    size_float = float(bytes_size)
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if abs(size_float) < 1024.0:
+            return f"{size_float:.1f} {unit}"
+        size_float /= 1024.0
+    return f"{size_float:.1f} PB"
+
 @app.get("/api/storage/summary")
 async def get_storage_summary():
-    """Calculate and return disk metrics and file type statistics"""
+    """Calculate and return separated DocVault storage statistics and Server Physical Disk metrics"""
     total_bytes, used_bytes, free_bytes = shutil.disk_usage(DOCUMENTS_DIR)
     
-    file_counts = {
-        "total_files": 0,
-        "total_folders": 0,
-        "videos": 0,
-        "documents": 0,
-        "images": 0,
-        "isos": 0,
-        "archives": 0,
-        "others": 0
+    docvault_total_size = 0
+    file_count = 0
+    folder_count = 0
+
+    categories = {
+        "documents": {"files": 0, "size_bytes": 0, "size_gb": 0.0, "percentage": 0.0},
+        "videos": {"files": 0, "size_bytes": 0, "size_gb": 0.0, "percentage": 0.0},
+        "iso": {"files": 0, "size_bytes": 0, "size_gb": 0.0, "percentage": 0.0},
+        "images": {"files": 0, "size_bytes": 0, "size_gb": 0.0, "percentage": 0.0},
+        "archives": {"files": 0, "size_bytes": 0, "size_gb": 0.0, "percentage": 0.0},
+        "other": {"files": 0, "size_bytes": 0, "size_gb": 0.0, "percentage": 0.0}
     }
+    
     all_files = []
 
     for root, dirs, files in os.walk(DOCUMENTS_DIR):
+        # Exclude hidden system directories (.trash, .tmp_uploads, .metadata, etc.)
         dirs[:] = [d for d in dirs if not d.startswith(".")]
-        rel_root = os.path.relpath(root, DOCUMENTS_DIR)
-        if rel_root.startswith("."):
+        rel_root = os.path.relpath(root, DOCUMENTS_DIR).replace("\\", "/")
+        if rel_root != "." and any(p.startswith(".") for p in rel_root.split("/")):
             continue
 
-        file_counts["total_folders"] += len(dirs)
+        folder_count += len(dirs)
 
         for filename in files:
             if filename.startswith("."):
@@ -927,42 +947,95 @@ async def get_storage_summary():
             except Exception:
                 continue
 
-            size = os.path.getsize(file_abs)
+            stat = os.stat(file_abs)
+            size = stat.st_size
+            mtime = stat.st_mtime
             ext = filename.split(".")[-1].lower() if "." in filename else ""
-            file_counts["total_files"] += 1
+            
+            docvault_total_size += size
+            file_count += 1
 
-            if ext in ("mp4", "webm", "mkv", "mov", "avi", "m4v", "3gp", "mpeg", "mpg"):
-                file_counts["videos"] += 1
-            elif ext in ("pdf", "doc", "docx", "txt", "md", "xls", "xlsx", "csv", "json"):
-                file_counts["documents"] += 1
+            if ext in ("pdf", "txt", "md", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv", "json"):
+                cat_key = "documents"
+            elif ext in ("mp4", "webm", "mkv", "mov", "avi", "m4v", "3gp", "mpeg", "mpg", "ts"):
+                cat_key = "videos"
+            elif ext in ("iso", "img"):
+                cat_key = "iso"
             elif ext in ("png", "jpg", "jpeg", "webp", "gif"):
-                file_counts["images"] += 1
-            elif ext == "iso":
-                file_counts["isos"] += 1
-            elif ext in ("zip", "tar", "gz", "7z"):
-                file_counts["archives"] += 1
+                cat_key = "images"
+            elif ext in ("zip", "tar", "gz", "bz2", "7z", "rar"):
+                cat_key = "archives"
             else:
-                file_counts["others"] += 1
+                cat_key = "other"
+
+            categories[cat_key]["files"] += 1
+            categories[cat_key]["size_bytes"] += size
 
             rel_file_path = os.path.relpath(file_abs, DOCUMENTS_DIR).replace("\\", "/")
             all_files.append({
+                "filename": filename,
                 "name": filename,
                 "path": rel_file_path,
+                "size_bytes": size,
                 "size": size,
-                "ext": ext
+                "size_human": format_size_human(size),
+                "ext": ext,
+                "modified_time": mtime,
+                "mtime": mtime
             })
 
-    top_largest = sorted(all_files, key=lambda x: x["size"], reverse=True)[:10]
+    # Calculate category percentages against DocVault Total Storage Size
+    for cat_key, cat_data in categories.items():
+        cat_data["size_gb"] = round(cat_data["size_bytes"] / (1024 * 1024 * 1024), 2)
+        cat_data["percentage"] = round((cat_data["size_bytes"] / docvault_total_size) * 100, 1) if docvault_total_size > 0 else 0.0
+
+    largest_files = sorted(all_files, key=lambda x: x["size_bytes"], reverse=True)[:10]
+    recent_files = sorted(all_files, key=lambda x: x["modified_time"], reverse=True)[:10]
+
+    docvault_gb = round(docvault_total_size / (1024 * 1024 * 1024), 2)
+
+    # Legacy compatibility fields kept alongside new schema
+    file_counts_compat = {
+        "total_files": file_count,
+        "total_folders": folder_count,
+        "documents": categories["documents"]["files"],
+        "videos": categories["videos"]["files"],
+        "isos": categories["iso"]["files"],
+        "images": categories["images"]["files"],
+        "archives": categories["archives"]["files"],
+        "others": categories["other"]["files"]
+    }
 
     return {
+        "docvault": {
+            "path": "/documents",
+            "total_size_bytes": docvault_total_size,
+            "total_size_gb": docvault_gb,
+            "size_bytes": docvault_total_size,
+            "size_gb": docvault_gb,
+            "file_count": file_count,
+            "files": file_count,
+            "folder_count": folder_count,
+            "folders": folder_count
+        },
+        "server_disk": {
+            "total_bytes": total_bytes,
+            "used_bytes": used_bytes,
+            "free_bytes": free_bytes,
+            "usage_percent": round((used_bytes / total_bytes) * 100, 1) if total_bytes else 0
+        },
+        "categories": categories,
+        "largest_files": largest_files,
+        "recent_files": recent_files,
+
+        # Backward compatibility aliases
         "disk": {
             "total": total_bytes,
             "used": used_bytes,
             "free": free_bytes,
             "used_percent": round((used_bytes / total_bytes) * 100, 1) if total_bytes else 0
         },
-        "counts": file_counts,
-        "largest_files": top_largest
+        "counts": file_counts_compat
     }
 
 @app.get("/api/search")

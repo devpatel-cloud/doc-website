@@ -130,21 +130,26 @@
             <p class="view-header-sub">Your private document infrastructure summary.</p>
           </div>
 
+          <!-- Section 1: DOCVAULT STORAGE -->
+          <div style="margin-bottom: 0.5rem;">
+            <span style="font-size: 0.75rem; font-weight: 700; letter-spacing: 1px; color: var(--primary-light); text-transform: uppercase;">DocVault Storage (/documents)</span>
+          </div>
+
           <!-- Metrics Grid -->
           <div class="metrics-grid">
             <div class="metric-card">
               <div class="metric-icon-wrap" style="background: rgba(99, 102, 241, 0.15); color: #818CF8;">💾</div>
-              <span class="metric-title">Storage Used</span>
+              <span class="metric-title">DocVault Used</span>
               <span id="dash-storage-used" class="metric-value">0 GB</span>
             </div>
             <div class="metric-card">
               <div class="metric-icon-wrap" style="background: rgba(6, 182, 212, 0.15); color: #06B6D4;">📄</div>
-              <span class="metric-title">Documents</span>
+              <span class="metric-title">User Files</span>
               <span id="dash-count-docs" class="metric-value">0</span>
             </div>
             <div class="metric-card">
               <div class="metric-icon-wrap" style="background: rgba(245, 158, 11, 0.15); color: #F59E0B;">📁</div>
-              <span class="metric-title">Folders</span>
+              <span class="metric-title">User Folders</span>
               <span id="dash-count-folders" class="metric-value">0</span>
             </div>
             <div class="metric-card">
@@ -159,25 +164,46 @@
             </div>
           </div>
 
-          <!-- Storage Category Breakdown Bar -->
+          <!-- DocVault Storage Breakdown Bar -->
           <div class="storage-overview-card">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <strong style="font-size: 0.9375rem;">Disk Allocation Breakdown</strong>
-              <span id="dash-storage-percent" style="font-size: 0.875rem; font-weight: 700; color: var(--primary-light);">0%</span>
+              <strong style="font-size: 0.9375rem;">DocVault Storage Breakdown</strong>
+              <span id="dash-docvault-size-badge" style="font-size: 0.875rem; font-weight: 700; color: var(--primary-light);">0 GB Total User Files</span>
             </div>
             <div class="storage-bar-bg">
-              <div id="bar-segment-docs" class="storage-bar-segment" style="background: #818CF8; width: 0%;"></div>
-              <div id="bar-segment-videos" class="storage-bar-segment" style="background: #F43F5E; width: 0%;"></div>
-              <div id="bar-segment-isos" class="storage-bar-segment" style="background: #06B6D4; width: 0%;"></div>
-              <div id="bar-segment-images" class="storage-bar-segment" style="background: #10B981; width: 0%;"></div>
-              <div id="bar-segment-archives" class="storage-bar-segment" style="background: #8B5CF6; width: 0%;"></div>
+              <div id="bar-segment-docs" class="storage-bar-segment" style="background: #818CF8; width: 0%;" title="Documents"></div>
+              <div id="bar-segment-videos" class="storage-bar-segment" style="background: #F43F5E; width: 0%;" title="Videos"></div>
+              <div id="bar-segment-isos" class="storage-bar-segment" style="background: #06B6D4; width: 0%;" title="ISO Images"></div>
+              <div id="bar-segment-images" class="storage-bar-segment" style="background: #10B981; width: 0%;" title="Images"></div>
+              <div id="bar-segment-archives" class="storage-bar-segment" style="background: #8B5CF6; width: 0%;" title="Archives"></div>
+              <div id="bar-segment-other" class="storage-bar-segment" style="background: #94A3B8; width: 0%;" title="Other"></div>
             </div>
             <div class="storage-legend-grid">
-              <div class="legend-item"><span class="legend-dot" style="background:#818CF8;"></span> Documents</div>
-              <div class="legend-item"><span class="legend-dot" style="background:#F43F5E;"></span> Videos</div>
-              <div class="legend-item"><span class="legend-dot" style="background:#06B6D4;"></span> ISO Images</div>
-              <div class="legend-item"><span class="legend-dot" style="background:#10B981;"></span> Images</div>
-              <div class="legend-item"><span class="legend-dot" style="background:#8B5CF6;"></span> Archives</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#818CF8;"></span> Documents (<span id="legend-pct-docs">0%</span>)</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#F43F5E;"></span> Videos (<span id="legend-pct-videos">0%</span>)</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#06B6D4;"></span> ISO Images (<span id="legend-pct-isos">0%</span>)</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#10B981;"></span> Images (<span id="legend-pct-images">0%</span>)</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#8B5CF6;"></span> Archives (<span id="legend-pct-archives">0%</span>)</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#94A3B8;"></span> Other (<span id="legend-pct-other">0%</span>)</div>
+            </div>
+          </div>
+
+          <!-- Section 2: SERVER DISK PHYSICAL STATS -->
+          <div style="margin-bottom: 0.5rem;">
+            <span style="font-size: 0.75rem; font-weight: 700; letter-spacing: 1px; color: var(--text-muted); text-transform: uppercase;">Server Physical Disk</span>
+          </div>
+          <div class="storage-overview-card" style="margin-bottom: 2rem; background: var(--bg-card);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <span style="font-weight: 600; font-size: 0.875rem;">Physical Disk Capacity Used</span>
+              <strong id="server-disk-percent" style="color: var(--accent-cyan);">0%</strong>
+            </div>
+            <div class="storage-bar-bg" style="height: 8px; margin: 0.5rem 0;">
+              <div id="server-disk-bar" style="background: var(--accent-cyan); height: 100%; width: 0%;"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);">
+              <span>Disk Used: <strong id="server-disk-used">0 GB</strong></span>
+              <span>Total Disk: <strong id="server-disk-total">0 GB</strong></span>
+              <span>Free Disk: <strong id="server-disk-free">0 GB</strong></span>
             </div>
           </div>
 
