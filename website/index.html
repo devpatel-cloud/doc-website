@@ -3,500 +3,385 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Lightweight, folder-based public document portal with secure admin upload system.">
-  <title>DocVault — Public Document Explorer</title>
-  <!-- Google Fonts: Inter -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=7">
+  <title>DocVault — Private Document Infrastructure</title>
+  <meta name="description" content="Secure, high-performance self-hosted document management platform with 20GB ISO support and resumable chunked uploads.">
+  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236366F1'><path d='M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z'/></svg>">
 </head>
 <body>
-  <!-- Header -->
-  <header class="site-header">
-    <div class="header-container">
-      <div class="brand">
-        <div class="brand-icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-          </svg>
-        </div>
-        <div class="brand-text">
-          <h1>DocVault</h1>
-          <span class="brand-subtitle">Folder-Based Document Explorer</span>
-        </div>
-      </div>
 
-      <!-- Search Bar -->
-      <div class="search-box">
-        <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"></circle>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-        </svg>
-        <input type="text" id="search-input" placeholder="Search folders & documents... (Press '/' to focus)" aria-label="Search items">
-        <button id="clear-search" class="clear-search-btn hidden" aria-label="Clear search">✕</button>
-        <kbd class="search-shortcut">/</kbd>
-      </div>
+  <div class="app-container">
 
-      <!-- Header Controls & Admin Auth / Upload Buttons -->
-      <div class="header-controls">
-        <button id="btn-storage-dashboard" class="btn-secondary" title="Storage Metrics" style="font-weight:600;">
-          📊 Storage
-        </button>
-        <button id="btn-trash-bin" class="btn-secondary hidden" title="Trash Bin" style="font-weight:600; color: var(--danger);">
-          🗑️ Trash
-        </button>
-        <button id="btn-admin-auth" class="btn-secondary" title="Administrator Sign In" style="font-weight:600;">
-          🔑 Admin Login
-        </button>
-        <button id="btn-open-upload" class="btn-header-upload hidden" title="Admin Upload">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="17 8 12 3 7 8"></polyline>
-            <line x1="12" y1="3" x2="12" y2="15"></line>
-          </svg>
-          <span>Upload</span>
-        </button>
-        <button id="btn-admin-logout-header" class="btn-secondary hidden" title="Sign Out">
-          🚪 Logout
-        </button>
-
-        <div class="view-toggle" role="group" aria-label="View toggle">
-          <button id="btn-grid-view" class="view-btn active" title="Grid View" aria-label="Grid View">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="3" width="7" height="7"></rect>
-              <rect x="14" y="3" width="7" height="7"></rect>
-              <rect x="14" y="14" width="7" height="7"></rect>
-              <rect x="3" y="14" width="7" height="7"></rect>
+    <!-- Left Sidebar Navigation -->
+    <aside class="app-sidebar">
+      <div>
+        <div class="sidebar-header">
+          <div class="brand-logo">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
             </svg>
-          </button>
-          <button id="btn-list-view" class="view-btn" title="List View" aria-label="List View">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="8" y1="6" x2="21" y2="6"></line>
-              <line x1="8" y1="12" x2="21" y2="12"></line>
-              <line x1="8" y1="18" x2="21" y2="18"></line>
-              <line x1="3" y1="6" x2="3.01" y2="6"></line>
-              <line x1="3" y1="12" x2="3.01" y2="12"></line>
-              <line x1="3" y1="18" x2="3.01" y2="18"></line>
-            </svg>
+          </div>
+          <div class="brand-text-group">
+            <span class="brand-name">DOCVAULT</span>
+            <span class="brand-tagline">Private file infrastructure</span>
+          </div>
+        </div>
+
+        <div class="sidebar-section-title">Overview</div>
+        <ul class="sidebar-nav-list">
+          <li class="sidebar-nav-item">
+            <button id="nav-btn-dashboard" class="active">
+              <span class="nav-icon">📊</span>
+              <span>Dashboard</span>
+            </button>
+          </li>
+          <li class="sidebar-nav-item">
+            <button id="nav-btn-files">
+              <span class="nav-icon">📁</span>
+              <span>Documents & Files</span>
+            </button>
+          </li>
+          <li class="sidebar-nav-item">
+            <button id="nav-btn-trash">
+              <span class="nav-icon">🗑️</span>
+              <span>Recycle Bin</span>
+            </button>
+          </li>
+        </ul>
+
+        <div class="sidebar-section-title" style="margin-top: 1.5rem;">System & Tools</div>
+        <ul class="sidebar-nav-list">
+          <li class="sidebar-nav-item">
+            <button id="nav-btn-storage">
+              <span class="nav-icon">📈</span>
+              <span>Storage Metrics</span>
+            </button>
+          </li>
+          <li class="sidebar-nav-item">
+            <button id="nav-btn-activity">
+              <span class="nav-icon">⚡</span>
+              <span>Audit Activity Log</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Bottom User Profile Card -->
+      <div class="sidebar-footer">
+        <div class="user-profile-card">
+          <div class="user-avatar">DP</div>
+          <div class="user-info">
+            <span class="user-name">Dev Patel</span>
+            <span class="user-role" id="user-role-badge">Visitor</span>
+          </div>
+          <button id="btn-admin-auth-sidebar" class="btn-icon" title="Admin Login / Logout">
+            🔑
           </button>
         </div>
       </div>
-    </div>
-  </header>
+    </aside>
 
-  <!-- Main Content Container -->
-  <main class="main-wrapper">
+    <!-- Main Content Canvas -->
+    <main class="app-main">
 
-    <!-- Navigation Header (Breadcrumb & Back Button) -->
-    <div class="navigation-bar">
-      <div class="nav-left">
-        <button id="btn-back" class="btn-back hidden" aria-label="Go back">
+      <!-- Top Header Bar -->
+      <header class="top-header">
+        <button id="btn-search-trigger" class="header-search-trigger">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="19" y1="12" x2="5" y2="12"></line>
-            <polyline points="12 19 5 12 12 5"></polyline>
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          <span>Back</span>
+          <span>Search files and folders...</span>
+          <span class="kbd-shortcut">⌘K</span>
         </button>
 
-        <nav id="breadcrumbs" class="breadcrumbs-container" aria-label="Breadcrumb navigation">
-          <!-- Dynamic Breadcrumbs rendered by script.js -->
-        </nav>
-      </div>
-
-      <div class="sort-selector">
-        <label for="sort-select">Sort by:</label>
-        <select id="sort-select" aria-label="Sort items">
-          <option value="type-name-asc">Type & Name (Folders First)</option>
-          <option value="name-asc">Name (A-Z)</option>
-          <option value="name-desc">Name (Z-A)</option>
-          <option value="date-desc">Newest First</option>
-          <option value="date-asc">Oldest First</option>
-          <option value="size-desc">Size (Largest)</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Stats Bar -->
-    <div class="stats-bar">
-      <div class="stats-info">
-        <span id="current-folder-title">Location: <strong>Documents Root</strong></span>
-        <span class="stats-divider">•</span>
-        <span>Showing <strong id="item-count">0</strong> items (<span id="folder-count">0</span> folders, <span id="file-count">0</span> files)</span>
-      </div>
-      <button id="btn-refresh" class="btn-refresh" title="Refresh folder">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="23 4 23 10 17 10"></polyline>
-          <polyline points="1 20 1 14 7 14"></polyline>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-        </svg>
-        Refresh
-      </button>
-    </div>
-
-    <!-- Loading State Skeletons -->
-    <div id="loading-state" class="documents-grid">
-      <div class="skeleton-card"></div>
-      <div class="skeleton-card"></div>
-      <div class="skeleton-card"></div>
-      <div class="skeleton-card"></div>
-    </div>
-
-    <!-- Grid View -->
-    <div id="documents-grid" class="documents-grid hidden"></div>
-
-    <!-- List View -->
-    <div id="documents-list" class="documents-list hidden">
-      <table class="list-table">
-        <thead>
-          <tr>
-            <th class="col-name">Name</th>
-            <th class="col-type">Type</th>
-            <th class="col-size">Size</th>
-            <th class="col-date">Modified</th>
-            <th class="col-actions">Actions</th>
-          </tr>
-        </thead>
-        <tbody id="list-tbody"></tbody>
-      </table>
-    </div>
-
-    <!-- Empty State -->
-    <div id="empty-state" class="empty-state hidden">
-      <div class="empty-icon">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-          <line x1="9" y1="13" x2="15" y2="13"/>
-        </svg>
-      </div>
-      <h3 id="empty-title">This folder is empty</h3>
-      <p id="empty-message">No files or subfolders found inside this directory.</p>
-      <button id="reset-search-btn" class="btn-secondary hidden">Clear Search</button>
-    </div>
-  </main>
-
-  <!-- Document & Video Preview Modal -->
-  <div id="viewer-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-    <div class="modal-container">
-      <div class="modal-header">
-        <div class="modal-title-group">
-          <span id="modal-ext-badge" class="badge">PDF</span>
-          <h2 id="modal-title">Document Preview</h2>
-        </div>
-        <div class="modal-header-actions">
-          <a id="modal-external-btn" href="#" target="_blank" class="btn-icon" title="Open in new tab" rel="noopener">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-              <polyline points="15 3 21 3 21 9"></polyline>
-              <line x1="10" y1="14" x2="21" y2="3"></line>
-            </svg>
-          </a>
-          <a id="modal-download-btn" href="#" download class="btn-icon btn-download" title="Download File">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <div class="header-actions">
+          <button id="btn-open-upload" class="btn-primary hidden" title="Upload Files">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
             </svg>
-            <span>Download</span>
-          </a>
-          <button id="modal-close-btn" class="btn-icon btn-close" aria-label="Close modal">✕</button>
+            <span>Upload</span>
+          </button>
+
+          <button id="btn-admin-auth-header" class="btn-secondary" title="Administrator Sign In">
+            🔑 Admin Login
+          </button>
+
+          <button id="btn-admin-logout-header" class="btn-secondary hidden" title="Sign Out">
+            🚪 Logout
+          </button>
+
+          <div class="view-toggle-group">
+            <button id="btn-grid-view" class="view-toggle-btn active" title="Grid View">▦</button>
+            <button id="btn-list-view" class="view-toggle-btn" title="List View">☷</button>
+          </div>
+        </div>
+      </header>
+
+      <!-- View Canvas Sections -->
+      <div id="view-canvas" style="flex: 1; display: flex; flex-direction: column; overflow-y: auto;">
+
+        <!-- 1. DASHBOARD VIEW -->
+        <section id="view-dashboard" class="view-panel">
+          <div class="view-header">
+            <h1 class="view-header-title">Good afternoon, Dev 👋</h1>
+            <p class="view-header-sub">Your private document infrastructure summary.</p>
+          </div>
+
+          <!-- Metrics Grid -->
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <div class="metric-icon-wrap" style="background: rgba(99, 102, 241, 0.15); color: #818CF8;">💾</div>
+              <span class="metric-title">Storage Used</span>
+              <span id="dash-storage-used" class="metric-value">0 GB</span>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon-wrap" style="background: rgba(6, 182, 212, 0.15); color: #06B6D4;">📄</div>
+              <span class="metric-title">Documents</span>
+              <span id="dash-count-docs" class="metric-value">0</span>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon-wrap" style="background: rgba(245, 158, 11, 0.15); color: #F59E0B;">📁</div>
+              <span class="metric-title">Folders</span>
+              <span id="dash-count-folders" class="metric-value">0</span>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon-wrap" style="background: rgba(244, 63, 94, 0.15); color: #F43F5E;">🎥</div>
+              <span class="metric-title">Videos</span>
+              <span id="dash-count-videos" class="metric-value">0</span>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon-wrap" style="background: rgba(139, 92, 246, 0.15); color: #A78BFA;">💿</div>
+              <span class="metric-title">ISO Images</span>
+              <span id="dash-count-isos" class="metric-value">0</span>
+            </div>
+          </div>
+
+          <!-- Storage Category Breakdown Bar -->
+          <div class="storage-overview-card">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <strong style="font-size: 0.9375rem;">Disk Allocation Breakdown</strong>
+              <span id="dash-storage-percent" style="font-size: 0.875rem; font-weight: 700; color: var(--primary-light);">0%</span>
+            </div>
+            <div class="storage-bar-bg">
+              <div id="bar-segment-docs" class="storage-bar-segment" style="background: #818CF8; width: 0%;"></div>
+              <div id="bar-segment-videos" class="storage-bar-segment" style="background: #F43F5E; width: 0%;"></div>
+              <div id="bar-segment-isos" class="storage-bar-segment" style="background: #06B6D4; width: 0%;"></div>
+              <div id="bar-segment-images" class="storage-bar-segment" style="background: #10B981; width: 0%;"></div>
+              <div id="bar-segment-archives" class="storage-bar-segment" style="background: #8B5CF6; width: 0%;"></div>
+            </div>
+            <div class="storage-legend-grid">
+              <div class="legend-item"><span class="legend-dot" style="background:#818CF8;"></span> Documents</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#F43F5E;"></span> Videos</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#06B6D4;"></span> ISO Images</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#10B981;"></span> Images</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#8B5CF6;"></span> Archives</div>
+            </div>
+          </div>
+
+          <!-- Quick Recent Files -->
+          <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 1rem;">Recent Storage Files</h2>
+          <div id="dash-recent-files-grid" class="documents-grid">
+            <!-- Rendered dynamically -->
+          </div>
+        </section>
+
+        <!-- 2. DOCUMENTS & FILES EXPLORER VIEW -->
+        <section id="view-files" class="view-panel hidden">
+          <!-- Explorer Navigation Bar -->
+          <div class="explorer-nav-bar">
+            <div class="breadcrumbs-wrap">
+              <button id="btn-back" class="btn-secondary hidden" style="padding: 4px 8px; font-size: 0.75rem;">← Back</button>
+              <div id="breadcrumbs" class="breadcrumbs-wrap">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <select id="sort-select" class="btn-secondary" style="font-size: 0.8125rem; padding: 0.375rem 0.625rem;">
+                <option value="type-name-asc">Folders First</option>
+                <option value="name-asc">Name (A-Z)</option>
+                <option value="name-desc">Name (Z-A)</option>
+                <option value="date-desc">Newest First</option>
+                <option value="size-desc">Size (Largest)</option>
+              </select>
+              <button id="btn-refresh" class="btn-secondary" title="Refresh folder" style="padding: 0.375rem 0.625rem;">↻</button>
+            </div>
+          </div>
+
+          <!-- Loading State Skeletons -->
+          <div id="loading-state" class="documents-grid hidden">
+            <div class="doc-card" style="height: 120px; opacity: 0.5;"></div>
+            <div class="doc-card" style="height: 120px; opacity: 0.5;"></div>
+            <div class="doc-card" style="height: 120px; opacity: 0.5;"></div>
+          </div>
+
+          <!-- Documents Container Views -->
+          <div id="documents-grid" class="documents-grid"></div>
+          <div id="documents-list" class="hidden">
+            <table class="documents-list-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Size</th>
+                  <th>Modified</th>
+                  <th style="text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="documents-list-tbody"></tbody>
+            </table>
+          </div>
+          <div id="empty-state" class="hidden" style="text-align: center; padding: 4rem 1rem; color: var(--text-muted);">
+            <p style="font-size: 1.125rem; margin-bottom: 0.5rem;">Folder is empty</p>
+            <p style="font-size: 0.875rem;">Upload documents or drag files here.</p>
+          </div>
+        </section>
+
+        <!-- 3. RECYCLE BIN VIEW -->
+        <section id="view-trash" class="view-panel hidden">
+          <div class="view-header">
+            <h1 class="view-header-title">Trash & Recycle Bin</h1>
+            <p class="view-header-sub">Items in trash are automatically purged after 30 days.</p>
+          </div>
+          <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); overflow: hidden;">
+            <table class="documents-list-table">
+              <thead>
+                <tr>
+                  <th>Item Name</th>
+                  <th>Original Location</th>
+                  <th>Deleted Date</th>
+                  <th style="text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="trash-tbody">
+                <!-- Rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- 4. STORAGE ANALYTICS VIEW -->
+        <section id="view-storage" class="view-panel hidden">
+          <div class="view-header">
+            <h1 class="view-header-title">Storage Analytics</h1>
+            <p class="view-header-sub">Detailed disk metrics and top largest files.</p>
+          </div>
+          <div id="storage-metrics-container">
+            <!-- Rendered dynamically -->
+          </div>
+        </section>
+
+        <!-- 5. AUDIT ACTIVITY LOG VIEW -->
+        <section id="view-activity" class="view-panel hidden">
+          <div class="view-header">
+            <h1 class="view-header-title">Audit Activity Log</h1>
+            <p class="view-header-sub">Security event history and admin action timeline.</p>
+          </div>
+          <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 1rem;">
+            <div id="activity-log-timeline" style="display: flex; flex-direction: column; gap: 0.75rem;">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+    <!-- Right File Inspector Drawer Panel -->
+    <aside id="file-inspector-panel" class="app-inspector hidden">
+      <div class="inspector-header">
+        <strong style="font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);">File Details</strong>
+        <button id="btn-close-inspector" class="btn-icon">✕</button>
+      </div>
+
+      <div class="inspector-preview-box">
+        <div id="inspector-icon" style="font-size: 2.5rem;">📄</div>
+        <span id="inspector-filename" class="inspector-file-title">select_a_file.pdf</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 1rem;">
+        <div class="inspector-detail-row">
+          <span class="inspector-detail-label">File Size</span>
+          <span id="inspector-size" class="inspector-detail-value">-</span>
+        </div>
+        <div class="inspector-detail-row">
+          <span class="inspector-detail-label">Modified Date</span>
+          <span id="inspector-mtime" class="inspector-detail-value">-</span>
+        </div>
+        <div class="inspector-detail-row">
+          <span class="inspector-detail-label">Folder Location</span>
+          <code id="inspector-path" style="background: var(--bg-card); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;">/documents</code>
+        </div>
+        <div class="inspector-detail-row">
+          <span class="inspector-detail-label">SHA-256 Checksum</span>
+          <div class="hash-code-box" id="inspector-sha256">Computing...</div>
+          <button id="btn-copy-inspector-sha256" class="btn-secondary" style="font-size: 0.75rem; justify-content: center; margin-top: 4px;">📋 Copy Checksum</button>
         </div>
       </div>
-      <div id="modal-body" class="modal-body"></div>
+
+      <div style="margin-top: auto; display: flex; flex-direction: column; gap: 0.5rem;">
+        <a id="btn-inspector-download" href="#" download class="btn-primary" style="justify-content: center;">Download File</a>
+        <button id="btn-inspector-delete" class="btn-secondary" style="justify-content: center; color: var(--danger);">🗑️ Move to Trash</button>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- Floating Resumable Upload Manager Widget (Bottom Right) -->
+  <div id="floating-uploader" class="floating-uploader-widget hidden">
+    <div class="uploader-widget-header">
+      <div class="uploader-widget-title">
+        <span>⚡ Resumable Upload Queue</span>
+      </div>
+      <button id="btn-close-uploader-widget" class="btn-icon">✕</button>
+    </div>
+    <div id="uploader-widget-body" class="uploader-widget-body">
+      <!-- Rendered dynamically -->
     </div>
   </div>
 
-  <!-- Admin Auth Modal -->
-  <div id="auth-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
-    <div class="modal-container auth-modal-box">
-      <div class="modal-header">
-        <div class="modal-title-group">
-          <div class="brand-icon" style="width:32px; height:32px;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-            </svg>
-          </div>
-          <h2>Administrator Access</h2>
-        </div>
-        <button id="auth-close-btn" class="btn-icon btn-close" aria-label="Close">✕</button>
+  <!-- Command Palette Modal (⌘K) -->
+  <div id="command-palette-modal" class="modal-backdrop hidden">
+    <div class="command-palette-container">
+      <input type="text" id="command-palette-input" class="command-palette-input" placeholder="Search files, folders, or type a command..." autofocus>
+      <div id="command-palette-results" class="command-palette-results">
+        <div style="padding: 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.875rem;">Type to search server documents...</div>
       </div>
-      <form id="auth-form" class="auth-form-body">
-        <p class="auth-subtitle">Enter the administrator password to unlock file uploads.</p>
-        <div id="auth-error-msg" class="auth-error hidden">Incorrect password. Please try again.</div>
-        <div class="form-group">
-          <label for="auth-password-input">Password</label>
-          <input type="password" id="auth-password-input" placeholder="Enter admin password" required autofocus autocomplete="current-password">
+    </div>
+  </div>
+
+  <!-- Minimal Cinematic Auth Login Modal -->
+  <div id="auth-modal" class="modal-backdrop hidden">
+    <div class="command-palette-container" style="max-width: 400px; padding: 2rem;">
+      <div style="text-align: center; margin-bottom: 1.5rem;">
+        <div class="brand-logo" style="margin: 0 auto 0.75rem; width: 44px; height: 44px;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
         </div>
-        <div class="form-actions">
-          <button type="button" id="auth-cancel-btn" class="btn-secondary">Cancel</button>
-          <button type="submit" id="auth-submit-btn" class="btn-download">Continue →</button>
+        <h2 style="font-size: 1.25rem; font-weight: 800;">DOCVAULT ADMIN</h2>
+        <p style="font-size: 0.8125rem; color: var(--text-muted);">Enter password to unlock administrator uploads</p>
+      </div>
+
+      <form id="auth-form">
+        <div style="margin-bottom: 1rem;">
+          <input type="password" id="auth-password" class="command-palette-input" placeholder="Admin password" style="border: 1px solid var(--border-medium); border-radius: var(--radius-md); font-size: 0.9375rem; padding: 0.75rem;" required>
+        </div>
+        <div id="auth-error" class="hidden" style="color: var(--danger); font-size: 0.8125rem; margin-bottom: 1rem; text-align: center;"></div>
+        <div style="display: flex; gap: 0.75rem;">
+          <button type="button" id="btn-auth-cancel" class="btn-secondary" style="flex: 1; justify-content: center;">Cancel</button>
+          <button type="submit" class="btn-primary" style="flex: 1; justify-content: center;">Continue</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- Admin Upload Drawer / Modal -->
-  <div id="upload-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
-    <div class="modal-container upload-modal-box">
-      <div class="modal-header">
-        <div class="modal-title-group">
-          <span class="badge" style="background-color: var(--success-bg); color: var(--success);">Admin Upload</span>
-          <h2>Upload Documents & Videos</h2>
-        </div>
-        <div class="modal-header-actions">
-          <button id="btn-admin-logout" class="btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.625rem;">Logout</button>
-          <button id="upload-close-btn" class="btn-icon btn-close" aria-label="Close">✕</button>
-        </div>
-      </div>
+  <!-- Hidden Native File Input for Drag & Drop / Upload -->
+  <input type="file" id="file-input" multiple style="display: none;">
 
-      <div class="upload-modal-grid">
-        <!-- Left Column: Destination Folder Tree -->
-        <div class="upload-tree-section">
-          <h3>1. Select Destination Folder</h3>
-          <div class="destination-display">
-            Selected: <strong id="selected-folder-display">Documents Root</strong>
-          </div>
-          <div id="folder-tree-container" class="folder-tree-box">
-            <!-- Dynamic Folder Tree rendered by script.js -->
-          </div>
-        </div>
+  <!-- Toast Notification System -->
+  <div id="toast-container" class="toast-container"></div>
 
-        <!-- Right Column: File Dropzone & Queue -->
-        <div class="upload-files-section">
-          <h3>2. Select Files to Upload</h3>
-          
-          <div id="dropzone" class="dropzone">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="17 8 12 3 7 8"></polyline>
-              <line x1="12" y1="3" x2="12" y2="15"></line>
-            </svg>
-            <p>Drag and drop documents or videos here, or</p>
-            <label for="file-input" class="btn-secondary btn-browse">Choose Files</label>
-            <input type="file" id="file-input" multiple class="hidden">
-            <span class="dropzone-hint">Supports PDFs, Office docs, images, ISO images, MP4/WebM videos (Max 20 GB per file)</span>
-          </div>
-
-          <!-- File Queue List & Independent Progress Cards Container -->
-          <div id="file-queue-container" class="file-queue-container hidden">
-            <div class="queue-summary-bar">
-              <span id="queue-summary-text">Ready to upload</span>
-            </div>
-            <div id="file-queue-list" class="file-queue-list" aria-live="polite"></div>
-
-            <div class="queue-actions">
-              <button id="btn-clear-queue" class="btn-secondary">Clear Completed</button>
-              <button id="btn-start-upload" class="btn-download">Start Upload →</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Duplicate File Prompt Modal -->
-  <div id="duplicate-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
-    <div class="modal-container duplicate-modal-box">
-      <div class="modal-header">
-        <div class="modal-title-group">
-          <span class="badge" style="background-color: var(--warning-bg); color: var(--warning);">File Exists</span>
-          <h2>Duplicate File Detected</h2>
-        </div>
-      </div>
-      <div class="modal-body" style="padding: 1.5rem; background: var(--bg-surface); display: block;">
-        <p style="margin-bottom: 1rem;" id="duplicate-msg-text">A file with this name already exists in the selected destination folder.</p>
-        <div class="form-actions" style="justify-content: flex-end; gap: 0.75rem;">
-          <button id="btn-dup-cancel" class="btn-secondary">Skip / Cancel</button>
-          <button id="btn-dup-replace" class="btn-download" style="background-color: var(--warning); border-color: var(--warning);">Replace File</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modern Admin Delete Confirmation Modal -->
-  <div id="delete-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
-    <div class="modal-container duplicate-modal-box">
-      <div class="modal-header">
-        <div class="modal-title-group">
-          <span class="badge" style="background-color: var(--danger-bg); color: var(--danger);">Admin Action</span>
-          <h2 id="delete-modal-heading">Delete Document?</h2>
-        </div>
-        <button id="btn-delete-close" class="btn-icon btn-close" aria-label="Close">✕</button>
-      </div>
-      <div class="modal-body" style="padding: 1.5rem; background: var(--bg-surface); display: block;">
-        <p style="font-weight: 600; font-size: 1rem; color: var(--text-main); margin-bottom: 0.5rem;" id="delete-item-name">Top_20_Docker_Commands.pdf</p>
-        <p style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 1rem;" id="delete-modal-warning">This file will be permanently deleted. This action cannot be undone.</p>
-        
-        <!-- Non-empty folder confirmation box -->
-        <div id="delete-folder-confirm-box" class="hidden" style="margin-bottom: 1rem;">
-          <p style="font-size: 0.8125rem; color: var(--danger); font-weight: 600; margin-bottom: 0.5rem;">To confirm folder deletion, please type <code style="background:var(--danger-bg); padding:2px 6px; border-radius:4px;">DELETE</code> below:</p>
-          <input type="text" id="delete-folder-input" placeholder="Type DELETE to confirm" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-medium); border-radius: var(--radius-sm); font-size: 0.875rem;">
-        </div>
-
-        <div id="delete-modal-error" class="card-error-box hidden" style="margin-bottom: 1rem;"></div>
-
-        <div class="form-actions" style="justify-content: flex-end; gap: 0.75rem;">
-          <button id="btn-delete-cancel" class="btn-secondary">Cancel</button>
-          <button id="btn-delete-confirm" class="btn-download" style="background-color: var(--danger); border-color: var(--danger);">Delete Permanently</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Storage Dashboard Modal -->
-  <div id="storage-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
-    <div class="modal-container" style="max-width: 600px;">
-      <div class="modal-header">
-        <div class="modal-title-group">
-          <span class="badge" style="background-color: var(--primary-bg); color: var(--primary-color);">System Storage</span>
-          <h2>Storage Dashboard</h2>
-        </div>
-        <button id="btn-storage-close" class="btn-icon btn-close" aria-label="Close">✕</button>
-      </div>
-      <div class="modal-body" style="padding: 1.5rem; background: var(--bg-surface); display: block;">
-        <div style="margin-bottom: 1.5rem;">
-          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 600;">
-            <span>Disk Space Used</span>
-            <span id="storage-percent-text">0%</span>
-          </div>
-          <div style="background: var(--border-medium); border-radius: 6px; height: 12px; overflow: hidden; width: 100%;">
-            <div id="storage-bar" style="background: var(--primary-color); height: 100%; width: 0%; transition: width 0.3s ease;"></div>
-          </div>
-          <div style="display: flex; justify-content: space-between; margin-top: 0.375rem; font-size: 0.75rem; color: var(--text-muted);">
-            <span id="storage-used-text">Used: 0 GB</span>
-            <span id="storage-total-text">Total: 0 GB</span>
-          </div>
-        </div>
-
-        <h3 style="font-size: 0.9375rem; margin-bottom: 0.75rem;">File Category Breakdown</h3>
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-bottom: 1.5rem;">
-          <div style="background: var(--bg-card); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-medium);">
-            <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">📄 Documents</span>
-            <strong id="count-documents" style="font-size: 1.125rem;">0</strong>
-          </div>
-          <div style="background: var(--bg-card); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-medium);">
-            <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">🎥 Videos</span>
-            <strong id="count-videos" style="font-size: 1.125rem;">0</strong>
-          </div>
-          <div style="background: var(--bg-card); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-medium);">
-            <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">💿 ISO Images</span>
-            <strong id="count-isos" style="font-size: 1.125rem;">0</strong>
-          </div>
-          <div style="background: var(--bg-card); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-medium);">
-            <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">🖼️ Images</span>
-            <strong id="count-images" style="font-size: 1.125rem;">0</strong>
-          </div>
-          <div style="background: var(--bg-card); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-medium);">
-            <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">📦 Archives</span>
-            <strong id="count-archives" style="font-size: 1.125rem;">0</strong>
-          </div>
-          <div style="background: var(--bg-card); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-medium);">
-            <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">📁 Folders</span>
-            <strong id="count-folders" style="font-size: 1.125rem;">0</strong>
-          </div>
-        </div>
-
-        <h3 style="font-size: 0.9375rem; margin-bottom: 0.5rem;">Top 5 Largest Files</h3>
-        <ul id="storage-largest-files" style="list-style: none; padding: 0; margin: 0; font-size: 0.8125rem;">
-          <!-- Rendered dynamically -->
-        </ul>
-      </div>
-    </div>
-  </div>
-
-  <!-- Trash / Recycle Bin Modal -->
-  <div id="trash-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
-    <div class="modal-container" style="max-width: 650px;">
-      <div class="modal-header">
-        <div class="modal-title-group">
-          <span class="badge" style="background-color: var(--danger-bg); color: var(--danger);">Admin Recycle Bin</span>
-          <h2>Trash & Recycle Bin</h2>
-        </div>
-        <button id="btn-trash-close" class="btn-icon btn-close" aria-label="Close">✕</button>
-      </div>
-      <div class="modal-body" style="padding: 1.5rem; background: var(--bg-surface); display: block;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-          <p style="font-size: 0.8125rem; color: var(--text-muted); margin: 0;">Items in trash are automatically purged after 30 days.</p>
-        </div>
-
-        <div id="trash-list-container" style="max-height: 320px; overflow-y: auto; border: 1px solid var(--border-medium); border-radius: var(--radius-sm); margin-bottom: 1rem;">
-          <table style="width: 100%; border-collapse: collapse; font-size: 0.8125rem; text-align: left;">
-            <thead>
-              <tr style="background: var(--bg-card); border-bottom: 1px solid var(--border-medium);">
-                <th style="padding: 0.625rem;">Item</th>
-                <th style="padding: 0.625rem;">Original Folder</th>
-                <th style="padding: 0.625rem;">Deleted Date</th>
-                <th style="padding: 0.625rem; text-align: right;">Action</th>
-              </tr>
-            </thead>
-            <tbody id="trash-tbody">
-              <!-- Rendered dynamically -->
-            </tbody>
-          </table>
-        </div>
-
-        <div class="form-actions" style="justify-content: flex-end;">
-          <button id="btn-trash-close-footer" class="btn-secondary">Close</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- File Metadata Modal -->
-  <div id="metadata-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
-    <div class="modal-container" style="max-width: 550px;">
-      <div class="modal-header">
-        <div class="modal-title-group">
-          <span class="badge" style="background-color: var(--primary-bg); color: var(--primary-color);">File Inspection</span>
-          <h2>Document Metadata</h2>
-        </div>
-        <button id="btn-meta-close" class="btn-icon btn-close" aria-label="Close">✕</button>
-      </div>
-      <div class="modal-body" style="padding: 1.5rem; background: var(--bg-surface); display: block;">
-        <div style="display: flex; flex-direction: column; gap: 0.75rem; font-size: 0.875rem;">
-          <div>
-            <span style="color: var(--text-muted); font-size: 0.75rem; display: block;">File Name</span>
-            <strong id="meta-filename" style="color: var(--text-main); font-size: 1rem;">-</strong>
-          </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-            <div>
-              <span style="color: var(--text-muted); font-size: 0.75rem; display: block;">Size</span>
-              <span id="meta-size">-</span>
-            </div>
-            <div>
-              <span style="color: var(--text-muted); font-size: 0.75rem; display: block;">Modified Date</span>
-              <span id="meta-mtime">-</span>
-            </div>
-          </div>
-          <div>
-            <span style="color: var(--text-muted); font-size: 0.75rem; display: block;">Folder Location</span>
-            <code id="meta-path" style="background: var(--bg-card); padding: 4px 8px; border-radius: 4px; font-size: 0.8125rem;">/documents</code>
-          </div>
-          <div>
-            <span style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-bottom: 0.25rem;">SHA-256 Checksum</span>
-            <div style="display: flex; gap: 0.5rem; align-items: center;">
-              <code id="meta-sha256" style="background: var(--bg-card); padding: 6px 10px; border-radius: 4px; font-size: 0.75rem; word-break: break-all; flex: 1; border: 1px solid var(--border-medium);">Computing...</code>
-              <button id="btn-copy-sha256" class="btn-secondary" style="font-size: 0.75rem; padding: 6px 10px; white-space: nowrap;">📋 Copy</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Toast Notification Banner -->
-  <div id="toast-notification" class="toast-notification hidden" role="alert" aria-live="polite">
-    <span id="toast-message">✓ Document deleted successfully</span>
-  </div>
-
-  <!-- Footer -->
-  <footer class="site-footer">
-    <div class="footer-container">
-      <p>DocVault Public Document Server V3 — Powered by Nginx, FastAPI & Docker</p>
-    </div>
-  </footer>
-
-  <script src="script.js?v=8"></script>
+  <script src="script.js?v=9"></script>
 </body>
 </html>

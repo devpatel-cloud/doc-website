@@ -1,5 +1,5 @@
 /**
- * DocVault V2 — Client Engine
+ * DocVault V2 — Client Engine & Premium Obsidian UI/UX Controller
  * Vanilla JavaScript (Zero External Dependencies)
  */
 
@@ -14,20 +14,29 @@
     searchQuery: '',
     sortBy: 'type-name-asc',
     viewMode: localStorage.getItem('docvault_view_mode') || 'grid',
+    activeView: 'dashboard', // dashboard, files, trash, storage, activity
+    selectedItem: null,
     
     // Auth & Upload State
     isAuthenticated: false,
     csrfToken: '',
-    selectedUploadPath: '', // e.g. "DevOps/Docker"
-    folderTreeData: null,
-    queuedFiles: [], // Array of File objects
-    uploadingIndex: -1,
-    duplicateContext: null // { file, folderPath }
+    selectedUploadPath: '',
+    uploadQueue: []
   };
 
-  // Public DOM Elements
-  const searchInput = document.getElementById('search-input');
-  const clearSearchBtn = document.getElementById('clear-search');
+  // DOM Elements
+  const viewDashboard = document.getElementById('view-dashboard');
+  const viewFiles = document.getElementById('view-files');
+  const viewTrash = document.getElementById('view-trash');
+  const viewStorage = document.getElementById('view-storage');
+  const viewActivity = document.getElementById('view-activity');
+
+  const navBtnDashboard = document.getElementById('nav-btn-dashboard');
+  const navBtnFiles = document.getElementById('nav-btn-files');
+  const navBtnTrash = document.getElementById('nav-btn-trash');
+  const navBtnStorage = document.getElementById('nav-btn-storage');
+  const navBtnActivity = document.getElementById('nav-btn-activity');
+
   const sortSelect = document.getElementById('sort-select');
   const btnGridView = document.getElementById('btn-grid-view');
   const btnListView = document.getElementById('btn-list-view');
@@ -38,92 +47,72 @@
   const loadingState = document.getElementById('loading-state');
   const documentsGrid = document.getElementById('documents-grid');
   const documentsList = document.getElementById('documents-list');
-  const listTbody = document.getElementById('list-tbody');
+  const listTbody = document.getElementById('documents-list-tbody');
   const emptyState = document.getElementById('empty-state');
-  const emptyTitle = document.getElementById('empty-title');
-  const emptyMessage = document.getElementById('empty-message');
-  const resetSearchBtn = document.getElementById('reset-search-btn');
 
-  const currentFolderTitle = document.getElementById('current-folder-title');
-  const itemCountEl = document.getElementById('item-count');
-  const folderCountEl = document.getElementById('folder-count');
-  const fileCountEl = document.getElementById('file-count');
+  // Command Palette & Inspector Elements
+  const btnSearchTrigger = document.getElementById('btn-search-trigger');
+  const commandPaletteModal = document.getElementById('command-palette-modal');
+  const commandPaletteInput = document.getElementById('command-palette-input');
+  const commandPaletteResults = document.getElementById('command-palette-results');
 
-  // Preview Modal Elements
-  const viewerModal = document.getElementById('viewer-modal');
-  const modalTitle = document.getElementById('modal-title');
-  const modalExtBadge = document.getElementById('modal-ext-badge');
-  const modalExternalBtn = document.getElementById('modal-external-btn');
-  const modalDownloadBtn = document.getElementById('modal-download-btn');
-  const modalCloseBtn = document.getElementById('modal-close-btn');
-  const modalBody = document.getElementById('modal-body');
+  const inspectorPanel = document.getElementById('file-inspector-panel');
+  const btnCloseInspector = document.getElementById('btn-close-inspector');
+  const inspectorIcon = document.getElementById('inspector-icon');
+  const inspectorFilename = document.getElementById('inspector-filename');
+  const inspectorSize = document.getElementById('inspector-size');
+  const inspectorMtime = document.getElementById('inspector-mtime');
+  const inspectorPath = document.getElementById('inspector-path');
+  const inspectorSha256 = document.getElementById('inspector-sha256');
+  const btnCopyInspectorSha256 = document.getElementById('btn-copy-inspector-sha256');
+  const btnInspectorDownload = document.getElementById('btn-inspector-download');
+  const btnInspectorDelete = document.getElementById('btn-inspector-delete');
 
-  // Admin Auth & Upload Elements
+  // Floating Upload Manager Elements
+  const floatingUploader = document.getElementById('floating-uploader');
+  const uploaderWidgetBody = document.getElementById('uploader-widget-body');
+  const btnCloseUploaderWidget = document.getElementById('btn-close-uploader-widget');
   const btnOpenUpload = document.getElementById('btn-open-upload');
+  const fileInput = document.getElementById('file-input');
+
+  // Admin Auth Elements
+  const btnAdminAuthHeader = document.getElementById('btn-admin-auth-header');
+  const btnAdminAuthSidebar = document.getElementById('btn-admin-auth-sidebar');
+  const btnAdminLogoutHeader = document.getElementById('btn-admin-logout-header');
   const authModal = document.getElementById('auth-modal');
   const authForm = document.getElementById('auth-form');
-  const authPasswordInput = document.getElementById('auth-password-input');
-  const authErrorMsg = document.getElementById('auth-error-msg');
-  const authCancelBtn = document.getElementById('auth-cancel-btn');
-  const authCloseBtn = document.getElementById('auth-close-btn');
+  const authPasswordInput = document.getElementById('auth-password');
+  const authErrorMsg = document.getElementById('auth-error');
+  const btnAuthCancel = document.getElementById('btn-auth-cancel');
 
-  const uploadModal = document.getElementById('upload-modal');
-  const uploadCloseBtn = document.getElementById('upload-close-btn');
-  const btnAdminLogout = document.getElementById('btn-admin-logout');
+  const toastContainer = document.getElementById('toast-container');
 
-  const selectedFolderDisplay = document.getElementById('selected-folder-display');
-  const folderTreeContainer = document.getElementById('folder-tree-container');
-
-  const dropzone = document.getElementById('dropzone');
-  const fileInput = document.getElementById('file-input');
-  const fileQueueContainer = document.getElementById('file-queue-container');
-  const queueCountEl = document.getElementById('queue-count');
-  const fileQueueList = document.getElementById('file-queue-list');
-
-  const overallProgressBox = document.getElementById('overall-progress-box');
-  const progressStatusText = document.getElementById('progress-status-text');
-  const overallProgressPct = document.getElementById('overall-progress-pct');
-  const overallProgressFill = document.getElementById('overall-progress-fill');
-
-  const btnClearQueue = document.getElementById('btn-clear-queue');
-  const btnStartUpload = document.getElementById('btn-start-upload');
-
-  // Duplicate Modal Elements
-  const duplicateModal = document.getElementById('duplicate-modal');
-  const duplicateMsgText = document.getElementById('duplicate-msg-text');
-  const btnDupCancel = document.getElementById('btn-dup-cancel');
-  const btnDupReplace = document.getElementById('btn-dup-replace');
-
-  // File Extension Categories & Metadata
+  // Extension Mapping & Categories
   const extensionMap = {
-    pdf: { category: 'pdf', label: 'PDF', iconClass: 'type-pdf' },
-    doc: { category: 'doc', label: 'DOC', iconClass: 'type-doc' },
-    docx: { category: 'doc', label: 'DOCX', iconClass: 'type-doc' },
-    txt: { category: 'doc', label: 'TXT', iconClass: 'type-text' },
-    md: { category: 'doc', label: 'MD', iconClass: 'type-text' },
-    rtf: { category: 'doc', label: 'RTF', iconClass: 'type-doc' },
+    pdf: { category: 'pdf', label: 'PDF', icon: '📄', color: '#EF4444' },
+    doc: { category: 'doc', label: 'DOC', icon: '📝', color: '#3B82F6' },
+    docx: { category: 'doc', label: 'DOCX', icon: '📝', color: '#3B82F6' },
+    txt: { category: 'doc', label: 'TXT', icon: '📃', color: '#94A3B8' },
+    md: { category: 'doc', label: 'MD', icon: '📑', color: '#94A3B8' },
 
-    xls: { category: 'sheet', label: 'XLS', iconClass: 'type-sheet' },
-    xlsx: { category: 'sheet', label: 'XLSX', iconClass: 'type-sheet' },
-    csv: { category: 'sheet', label: 'CSV', iconClass: 'type-sheet' },
+    xls: { category: 'sheet', label: 'XLS', icon: '📊', color: '#10B981' },
+    xlsx: { category: 'sheet', label: 'XLSX', icon: '📊', color: '#10B981' },
+    csv: { category: 'sheet', label: 'CSV', icon: '📊', color: '#10B981' },
 
-    png: { category: 'image', label: 'PNG', iconClass: 'type-image' },
-    jpg: { category: 'image', label: 'JPG', iconClass: 'type-image' },
-    jpeg: { category: 'image', label: 'JPEG', iconClass: 'type-image' },
-    svg: { category: 'image', label: 'SVG', iconClass: 'type-image' },
-    webp: { category: 'image', label: 'WEBP', iconClass: 'type-image' },
+    png: { category: 'image', label: 'PNG', icon: '🖼️', color: '#10B981' },
+    jpg: { category: 'image', label: 'JPG', icon: '🖼️', color: '#10B981' },
+    jpeg: { category: 'image', label: 'JPEG', icon: '🖼️', color: '#10B981' },
+    webp: { category: 'image', label: 'WEBP', icon: '🖼️', color: '#10B981' },
+    gif: { category: 'image', label: 'GIF', icon: '🖼️', color: '#10B981' },
 
-    mp4: { category: 'video', label: 'MP4', iconClass: 'type-video' },
-    webm: { category: 'video', label: 'WEBM', iconClass: 'type-video' },
-    mkv: { category: 'video', label: 'MKV', iconClass: 'type-video' },
-    mov: { category: 'video', label: 'MOV', iconClass: 'type-video' },
-    avi: { category: 'video', label: 'AVI', iconClass: 'type-video' },
+    mp4: { category: 'video', label: 'MP4', icon: '🎬', color: '#F43F5E' },
+    webm: { category: 'video', label: 'WEBM', icon: '🎬', color: '#F43F5E' },
+    mkv: { category: 'video', label: 'MKV', icon: '🎬', color: '#F43F5E' },
+    mov: { category: 'video', label: 'MOV', icon: '🎬', color: '#F43F5E' },
+    avi: { category: 'video', label: 'AVI', icon: '🎬', color: '#F43F5E' },
 
-    zip: { category: 'archive', label: 'ZIP', iconClass: 'type-archive' },
-    iso: { category: 'archive', label: 'ISO', iconClass: 'type-archive' },
-    tar: { category: 'archive', label: 'TAR', iconClass: 'type-archive' },
-    gz: { category: 'archive', label: 'GZ', iconClass: 'type-archive' },
-    '7z': { category: 'archive', label: '7Z', iconClass: 'type-archive' }
+    zip: { category: 'archive', label: 'ZIP', icon: '📦', color: '#8B5CF6' },
+    iso: { category: 'iso', label: 'ISO', icon: '💿', color: '#06B6D4' }
   };
 
   /**
@@ -131,292 +120,261 @@
    */
   async function init() {
     setupEventListeners();
-    applyViewMode(state.viewMode);
     await checkAuthStatus();
     parseHashAndNavigate();
+    applyViewMode(state.viewMode);
+    loadDashboardMetrics();
   }
 
   /**
-   * Check Auth Status
+   * Navigation View Switching
+   */
+  function switchView(viewName) {
+    state.activeView = viewName;
+    
+    [viewDashboard, viewFiles, viewTrash, viewStorage, viewActivity].forEach(el => {
+      if (el) el.classList.add('hidden');
+    });
+
+    [navBtnDashboard, navBtnFiles, navBtnTrash, navBtnStorage, navBtnActivity].forEach(el => {
+      if (el) el.classList.remove('active');
+    });
+
+    if (viewName === 'dashboard') {
+      viewDashboard.classList.remove('hidden');
+      navBtnDashboard.classList.add('active');
+      loadDashboardMetrics();
+    } else if (viewName === 'files') {
+      viewFiles.classList.remove('hidden');
+      navBtnFiles.classList.add('active');
+      loadCurrentFolder();
+    } else if (viewName === 'trash') {
+      viewTrash.classList.remove('hidden');
+      navBtnTrash.classList.add('active');
+      loadTrashList();
+    } else if (viewName === 'storage') {
+      viewStorage.classList.remove('hidden');
+      navBtnStorage.classList.add('active');
+      loadStorageAnalytics();
+    } else if (viewName === 'activity') {
+      viewActivity.classList.remove('hidden');
+      navBtnActivity.classList.add('active');
+      loadAuditActivity();
+    }
+  }
+
+  /**
+   * Auth Status Check
    */
   async function checkAuthStatus() {
     try {
       const res = await fetch('/api/auth/status');
       if (res.ok) {
         const data = await res.json();
-        state.isAuthenticated = !!data.authenticated;
-        if (data.csrfToken) {
-          state.csrfToken = data.csrfToken;
-        }
+        state.isAuthenticated = data.authenticated;
+        state.csrfToken = data.csrfToken || '';
+      } else {
+        state.isAuthenticated = false;
+        state.csrfToken = '';
       }
     } catch (e) {
       state.isAuthenticated = false;
     }
+    updateAuthUI();
   }
 
-  /**
-   * Parse URL Hash & Trigger Navigation
-   */
-  function parseHashAndNavigate() {
-    const hash = window.location.hash.replace(/^#\/?/, '');
-    if (!hash) {
-      state.currentPath = [];
+  function updateAuthUI() {
+    const roleBadge = document.getElementById('user-role-badge');
+    if (state.isAuthenticated) {
+      if (btnAdminAuthHeader) btnAdminAuthHeader.classList.add('hidden');
+      if (btnOpenUpload) btnOpenUpload.classList.remove('hidden');
+      if (btnAdminLogoutHeader) btnAdminLogoutHeader.classList.remove('hidden');
+      if (roleBadge) roleBadge.textContent = 'Admin';
     } else {
-      state.currentPath = hash.split('/').map(decodeURIComponent).filter(Boolean);
+      if (btnAdminAuthHeader) btnAdminAuthHeader.classList.remove('hidden');
+      if (btnOpenUpload) btnOpenUpload.classList.add('hidden');
+      if (btnAdminLogoutHeader) btnAdminLogoutHeader.classList.add('hidden');
+      if (roleBadge) roleBadge.textContent = 'Visitor';
     }
-    loadCurrentFolder();
   }
 
   /**
-   * Set Path & Update Hash
+   * Dashboard Summary Controller
    */
-  function setPath(newPathArray) {
-    state.currentPath = newPathArray;
-    const hashString = '#' + newPathArray.map(encodeURIComponent).join('/');
-    window.location.hash = hashString;
-    loadCurrentFolder();
+  async function loadDashboardMetrics() {
+    try {
+      const res = await fetch('/api/storage/summary');
+      if (res.ok) {
+        const data = await res.json();
+        document.getElementById('dash-storage-used').textContent = formatFileSize(data.disk.used);
+        document.getElementById('dash-count-docs').textContent = data.counts.documents;
+        document.getElementById('dash-count-folders').textContent = data.counts.total_folders;
+        document.getElementById('dash-count-videos').textContent = data.counts.videos;
+        document.getElementById('dash-count-isos').textContent = data.counts.isos;
+        document.getElementById('dash-storage-percent').textContent = `${data.disk.used_percent}%`;
+
+        // Bar segments
+        const totalCat = data.counts.total_files || 1;
+        document.getElementById('bar-segment-docs').style.width = `${(data.counts.documents / totalCat) * 100}%`;
+        document.getElementById('bar-segment-videos').style.width = `${(data.counts.videos / totalCat) * 100}%`;
+        document.getElementById('bar-segment-isos').style.width = `${(data.counts.isos / totalCat) * 100}%`;
+        document.getElementById('bar-segment-images').style.width = `${(data.counts.images / totalCat) * 100}%`;
+        document.getElementById('bar-segment-archives').style.width = `${(data.counts.archives / totalCat) * 100}%`;
+
+        // Recent files
+        const recentGrid = document.getElementById('dash-recent-files-grid');
+        if (recentGrid && data.largest_files) {
+          recentGrid.innerHTML = data.largest_files.slice(0, 4).map(f => {
+            const extInfo = extensionMap[f.ext] || { icon: '📄' };
+            return `
+              <div class="doc-card" onclick="window.DocPortal.selectFileItem('${escapeJS(f.name)}', '${escapeJS(f.path)}')">
+                <div class="doc-card-top">
+                  <span class="doc-type-icon" style="background: var(--bg-card); font-size: 1.5rem;">${extInfo.icon}</span>
+                  <span style="font-size: 0.75rem; color: var(--primary-light); font-weight: 700;">${formatFileSize(f.size)}</span>
+                </div>
+                <div>
+                  <div class="doc-card-name" title="${escapeHTML(f.name)}">${escapeHTML(f.name)}</div>
+                  <div class="doc-card-meta">
+                    <span>/${escapeHTML(f.path)}</span>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+      }
+    } catch (e) {
+      console.error('Dashboard metrics load error:', e);
+    }
   }
 
   /**
-   * Fetch current directory from Nginx JSON Autoindex
+   * Current Folder Explorer Controller
    */
   async function loadCurrentFolder() {
     showLoading(true);
-    updateNavigationUI();
-
-    const pathSubString = state.currentPath.length > 0 
-      ? state.currentPath.map(encodeURIComponent).join('/') + '/' 
-      : '';
-    
-    const apiEndpoint = `/api/documents/${pathSubString}`;
+    const subPath = state.currentPath.join('/');
+    const cleanPath = subPath ? subPath.replace(/^\/+/, '') : '';
+    const endpoint = cleanPath ? `/documents/${cleanPath}/` : '/documents/';
 
     try {
-      const response = await fetch(apiEndpoint, {
-        headers: { 'Accept': 'application/json' }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Server status ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (Array.isArray(data)) {
-        const items = data.filter(item => item.name && !item.name.startsWith('.'));
-
-        state.currentItems = await Promise.all(items.map(async item => {
-          const isDir = item.type === 'directory';
-          const relativePath = [...state.currentPath, item.name].join('/');
-          const docUrl = `/documents/${encodeURIComponent(relativePath.replace(/\/+/g, '/'))}`;
-
-          let childCount = null;
-          if (isDir) {
-            childCount = await fetchFolderItemCount([...state.currentPath, item.name]);
-          }
-
-          return {
-            name: item.name,
-            isFolder: isDir,
-            size: item.size || 0,
-            mtime: new Date(item.mtime || Date.now()),
-            url: docUrl,
-            ext: isDir ? 'folder' : getFileExtension(item.name),
-            path: [...state.currentPath, item.name],
-            childCount: childCount
-          };
-        }));
-      } else {
-        state.currentItems = [];
-      }
-    } catch (err) {
-      console.error('Error fetching directory contents:', err);
+      const res = await fetch(endpoint);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      
+      state.currentItems = parseDirectoryListing(data);
+      applyFilterAndSort();
+      renderBreadcrumbs();
+    } catch (e) {
+      console.error('Failed loading folder:', e);
       state.currentItems = [];
+      applyFilterAndSort();
     } finally {
       showLoading(false);
-      applyFilterAndSort();
     }
   }
 
-  /**
-   * Fetch item count inside subfolder
-   */
-  async function fetchFolderItemCount(pathArray) {
-    try {
-      const pathSubString = pathArray.map(encodeURIComponent).join('/') + '/';
-      const response = await fetch(`/api/documents/${pathSubString}`, {
-        headers: { 'Accept': 'application/json' }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          return data.filter(item => item.name && !item.name.startsWith('.')).length;
-        }
-      }
-    } catch (e) {}
-    return 0;
+  function parseDirectoryListing(rawItems) {
+    if (!Array.isArray(rawItems)) return [];
+    return rawItems
+      .filter(item => item && item.name && !item.name.startsWith('.'))
+      .map(item => ({
+        name: item.name,
+        type: item.type === 'directory' ? 'folder' : 'file',
+        size: item.size || 0,
+        mtime: item.mtime ? new Date(item.mtime) : new Date(),
+        ext: item.type === 'directory' ? '' : getFileExtension(item.name),
+        url: buildItemURL(item.name)
+      }));
   }
 
-  /**
-   * Filter and Sort Items
-   */
+  function buildItemURL(itemName) {
+    const parts = [...state.currentPath, itemName].map(p => encodeURIComponent(p));
+    return `/documents/${parts.join('/')}`;
+  }
+
   function applyFilterAndSort() {
-    let result = [...state.currentItems];
+    let items = [...state.currentItems];
 
-    if (state.searchQuery.trim() !== '') {
+    if (state.searchQuery) {
       const q = state.searchQuery.toLowerCase();
-      result = result.filter(item => 
-        item.name.toLowerCase().includes(q) || item.ext.toLowerCase().includes(q)
-      );
+      items = items.filter(i => i.name.toLowerCase().includes(q));
     }
 
-    result.sort((a, b) => {
+    items.sort((a, b) => {
       if (state.sortBy === 'type-name-asc') {
-        if (a.isFolder && !b.isFolder) return -1;
-        if (!a.isFolder && b.isFolder) return 1;
-        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+        if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
+      } else if (state.sortBy === 'name-asc') {
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
+      } else if (state.sortBy === 'name-desc') {
+        return b.name.localeCompare(a.name, undefined, { sensitivity: 'base', numeric: true });
+      } else if (state.sortBy === 'date-desc') {
+        return b.mtime - a.mtime;
+      } else if (state.sortBy === 'date-asc') {
+        return a.mtime - b.mtime;
+      } else if (state.sortBy === 'size-desc') {
+        return b.size - a.size;
       }
-
-      switch (state.sortBy) {
-        case 'name-asc':
-          return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-        case 'name-desc':
-          return b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: 'base' });
-        case 'date-desc':
-          return b.mtime - a.mtime;
-        case 'date-asc':
-          return a.mtime - b.mtime;
-        case 'size-desc':
-          return b.size - a.size;
-        default:
-          return 0;
-      }
+      return 0;
     });
 
-    state.filteredItems = result;
-    render();
+    state.filteredItems = items;
+    renderExplorer();
   }
 
-  /**
-   * Render UI
-   */
-  function render() {
-    const folders = state.currentItems.filter(i => i.isFolder);
-    const files = state.currentItems.filter(i => !i.isFolder);
-
-    itemCountEl.textContent = state.filteredItems.length;
-    folderCountEl.textContent = folders.length;
-    fileCountEl.textContent = files.length;
-
+  function renderExplorer() {
     if (state.filteredItems.length === 0) {
+      emptyState.classList.remove('hidden');
       documentsGrid.classList.add('hidden');
       documentsList.classList.add('hidden');
-      emptyState.classList.remove('hidden');
-
-      if (state.searchQuery.trim() !== '') {
-        emptyTitle.textContent = 'No matches found';
-        emptyMessage.textContent = `No files or folders matched "${state.searchQuery}".`;
-        resetSearchBtn.classList.remove('hidden');
-      } else {
-        emptyTitle.textContent = 'This folder is empty';
-        emptyMessage.textContent = 'No files or subfolders found inside this directory.';
-        resetSearchBtn.classList.add('hidden');
-      }
       return;
     }
 
     emptyState.classList.add('hidden');
-
     if (state.viewMode === 'grid') {
-      renderGridView();
       documentsGrid.classList.remove('hidden');
       documentsList.classList.add('hidden');
+      renderGridView();
     } else {
-      renderListView();
-      documentsList.classList.remove('hidden');
       documentsGrid.classList.add('hidden');
+      documentsList.classList.remove('hidden');
+      renderListView();
     }
   }
 
-  /**
-   * Render Grid View Cards
-   */
   function renderGridView() {
     documentsGrid.innerHTML = state.filteredItems.map(item => {
-      if (item.isFolder) {
-        const countText = item.childCount !== null ? `${item.childCount} ${item.childCount === 1 ? 'item' : 'items'}` : 'Folder';
+      const relPath = [...state.currentPath, item.name].join('/');
+
+      if (item.type === 'folder') {
         return `
-          <div class="doc-card folder-card" onclick="window.DocPortal.navigateToFolder('${escapeJS(item.name)}')">
-            <div class="doc-card-header">
-              <div class="doc-icon-wrapper type-folder">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                </svg>
-              </div>
-              <span class="doc-badge type-folder">Folder</span>
+          <div class="doc-card" onclick="window.DocPortal.navigateToFolder('${escapeJS(item.name)}')">
+            <div class="doc-card-top">
+              <span class="doc-type-icon" style="background: var(--folder-bg); color: var(--folder-icon); font-size: 1.5rem;">📁</span>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">Folder</span>
             </div>
             <div>
-              <h3 class="doc-title" title="${escapeHTML(item.name)}">📁 ${escapeHTML(item.name)}</h3>
-              <div class="doc-meta">
-                <span>${countText}</span>
-              </div>
-            </div>
-            <div class="doc-card-actions">
-              <button class="btn-card-action btn-open-folder">
-                Open Folder →
-              </button>
-              <button type="button" class="btn-card-action btn-delete-action" title="Delete Folder" onclick="event.stopPropagation(); window.DocPortal.handleDeleteClick('${escapeJS(item.name)}', '${escapeJS(item.path || (state.currentPath.length ? state.currentPath.join('/') + '/' + item.name : item.name))}', true, ${item.childCount || 0})">
-                🗑️ Delete
-              </button>
-            </div>
-          </div>
-        `;
-      } else {
-        const extInfo = extensionMap[item.ext] || {
-          category: 'other',
-          label: (item.ext || 'FILE').toUpperCase(),
-          iconClass: 'type-text'
-        };
-
-        const itemRelPath = state.currentPath.length ? state.currentPath.join('/') + '/' + item.name : item.name;
-
-        return `
-          <div class="doc-card">
-            <div class="doc-card-header">
-              <div class="doc-icon-wrapper ${extInfo.iconClass}">
-                ${getFileSVGIcon(extInfo.category)}
-              </div>
-              <span class="doc-badge ${extInfo.iconClass}">${extInfo.label}</span>
-            </div>
-            <div>
-              <h3 class="doc-title" title="${escapeHTML(item.name)}">${escapeHTML(item.name)}</h3>
-              <div class="doc-meta">
-                <span>${formatFileSize(item.size)}</span>
-                <span>•</span>
+              <div class="doc-card-name" title="${escapeHTML(item.name)}">${escapeHTML(item.name)}</div>
+              <div class="doc-card-meta">
                 <span>${formatDate(item.mtime)}</span>
               </div>
             </div>
-            <div class="doc-card-actions">
-              <button class="btn-card-action btn-view" onclick="window.DocPortal.openViewer('${escapeJS(item.name)}', '${escapeJS(item.url)}', '${escapeJS(item.ext)}')">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-                ${extInfo.category === 'video' ? 'Play' : 'View'}
-              </button>
-              <a href="${item.url}" download class="btn-card-action btn-download-primary">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="7 10 12 15 17 10"></polyline>
-                  <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
-                Download
-              </a>
-              <button type="button" class="btn-card-action" title="File Info & Checksum" onclick="event.stopPropagation(); window.DocPortal.openMetadataModal('${escapeJS(itemRelPath)}')">
-                ℹ️ Info
-              </button>
-              <button type="button" class="btn-card-action btn-delete-action" title="Delete Document" onclick="event.stopPropagation(); window.DocPortal.handleDeleteClick('${escapeJS(item.name)}', '${escapeJS(itemRelPath)}', false, 0)">
-                🗑️ Delete
-              </button>
+          </div>
+        `;
+      } else {
+        const extInfo = extensionMap[item.ext] || { icon: '📄' };
+        return `
+          <div class="doc-card" onclick="window.DocPortal.selectFileItem('${escapeJS(item.name)}', '${escapeJS(relPath)}')">
+            <div class="doc-card-top">
+              <span class="doc-type-icon" style="background: var(--bg-card); font-size: 1.5rem;">${extInfo.icon}</span>
+              <span style="font-size: 0.75rem; color: var(--primary-light); font-weight: 700;">${formatFileSize(item.size)}</span>
+            </div>
+            <div>
+              <div class="doc-card-name" title="${escapeHTML(item.name)}">${escapeHTML(item.name)}</div>
+              <div class="doc-card-meta">
+                <span>${formatDate(item.mtime)}</span>
+              </div>
             </div>
           </div>
         `;
@@ -424,86 +382,30 @@
     }).join('');
   }
 
-  /**
-   * Render List View Rows
-   */
   function renderListView() {
     listTbody.innerHTML = state.filteredItems.map(item => {
-      const itemRelPath = state.currentPath.length ? state.currentPath.join('/') + '/' + item.name : item.name;
+      const relPath = [...state.currentPath, item.name].join('/');
 
-      if (item.isFolder) {
-        const countText = item.childCount !== null ? `${item.childCount} items` : 'Folder';
+      if (item.type === 'folder') {
         return `
-          <tr class="row-folder" onclick="window.DocPortal.navigateToFolder('${escapeJS(item.name)}')">
-            <td class="col-name">
-              <div class="list-doc-name">
-                <div class="list-icon-small type-folder">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                  </svg>
-                </div>
-                <strong title="${escapeHTML(item.name)}">📁 ${escapeHTML(item.name)}</strong>
-              </div>
-            </td>
-            <td class="col-type">
-              <span class="doc-badge type-folder">Folder</span>
-            </td>
-            <td class="col-size">${countText}</td>
-            <td class="col-date">${formatDate(item.mtime)}</td>
-            <td class="col-actions">
-              <div class="list-actions">
-                <button class="btn-secondary" style="padding: 0.25rem 0.625rem; font-size: 0.75rem;">Open →</button>
-                <button type="button" class="btn-icon-action btn-delete-action" title="Delete Folder" onclick="event.stopPropagation(); window.DocPortal.handleDeleteClick('${escapeJS(item.name)}', '${escapeJS(itemRelPath)}', true, ${item.childCount || 0})">
-                  🗑️
-                </button>
-              </div>
-            </td>
+          <tr onclick="window.DocPortal.navigateToFolder('${escapeJS(item.name)}')">
+            <td><strong style="color: var(--folder-icon);">📁 ${escapeHTML(item.name)}</strong></td>
+            <td><span style="color: var(--text-muted); font-size: 0.75rem;">Folder</span></td>
+            <td>-</td>
+            <td>${formatDate(item.mtime)}</td>
+            <td style="text-align: right;"><button class="btn-secondary" style="font-size: 0.75rem; padding: 2px 8px;">Open</button></td>
           </tr>
         `;
       } else {
-        const extInfo = extensionMap[item.ext] || {
-          category: 'other',
-          label: (item.ext || 'FILE').toUpperCase(),
-          iconClass: 'type-text'
-        };
-
+        const extInfo = extensionMap[item.ext] || { icon: '📄' };
         return `
-          <tr>
-            <td class="col-name">
-              <div class="list-doc-name">
-                <div class="list-icon-small ${extInfo.iconClass}">
-                  ${getFileSVGIcon(extInfo.category, 18)}
-                </div>
-                <span title="${escapeHTML(item.name)}">${escapeHTML(item.name)}</span>
-              </div>
-            </td>
-            <td class="col-type">
-              <span class="doc-badge ${extInfo.iconClass}">${extInfo.label}</span>
-            </td>
-            <td class="col-size">${formatFileSize(item.size)}</td>
-            <td class="col-date">${formatDate(item.mtime)}</td>
-            <td class="col-actions">
-              <div class="list-actions">
-                <button class="btn-icon-action" title="View Document" onclick="window.DocPortal.openViewer('${escapeJS(item.name)}', '${escapeJS(item.url)}', '${escapeJS(item.ext)}')">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                    <circle cx="12" cy="12" r="3"></circle>
-                  </svg>
-                </button>
-                <a href="${item.url}" download class="btn-icon-action" title="Download Document">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                  </svg>
-                </a>
-                <button type="button" class="btn-icon-action" title="File Info & Checksum" onclick="event.stopPropagation(); window.DocPortal.openMetadataModal('${escapeJS(itemRelPath)}')">
-                  ℹ️
-                </button>
-                <button type="button" class="btn-icon-action btn-delete-action" title="Delete Document" onclick="event.stopPropagation(); window.DocPortal.handleDeleteClick('${escapeJS(item.name)}', '${escapeJS(itemRelPath)}', false, 0)">
-                  🗑️
-                </button>
-              </div>
+          <tr onclick="window.DocPortal.selectFileItem('${escapeJS(item.name)}', '${escapeJS(relPath)}')">
+            <td><strong>${extInfo.icon} ${escapeHTML(item.name)}</strong></td>
+            <td><span style="color: var(--text-muted); font-size: 0.75rem;">${item.ext.toUpperCase()}</span></td>
+            <td>${formatFileSize(item.size)}</td>
+            <td>${formatDate(item.mtime)}</td>
+            <td style="text-align: right;">
+              <a href="${item.url}" download class="btn-secondary" style="font-size: 0.75rem; padding: 2px 8px;" onclick="event.stopPropagation();">Download</a>
             </td>
           </tr>
         `;
@@ -511,387 +413,123 @@
     }).join('');
   }
 
-  /**
-   * Render Navigation Bar UI
-   */
-  function updateNavigationUI() {
-    if (state.currentPath.length > 0) {
-      btnBack.classList.remove('hidden');
-    } else {
-      btnBack.classList.add('hidden');
-    }
+  function renderBreadcrumbs() {
+    let html = `<span class="breadcrumb-crumb ${state.currentPath.length === 0 ? 'active' : ''}" onclick="window.DocPortal.navigateToBreadcrumb(-1)">Documents</span>`;
 
-    let html = `
-      <a href="#" class="breadcrumb-item ${state.currentPath.length === 0 ? 'active' : ''}" onclick="window.DocPortal.navigateToBreadcrumb(-1); return false;">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-          <polyline points="9 22 9 12 15 12 15 22"></polyline>
-        </svg>
-        Documents
-      </a>
-    `;
-
-    state.currentPath.forEach((segment, idx) => {
+    state.currentPath.forEach((folder, idx) => {
+      html += ` <span style="color: var(--text-subtle);">/</span> `;
       const isLast = idx === state.currentPath.length - 1;
-      html += `<span class="breadcrumb-separator">/</span>`;
-      if (isLast) {
-        html += `<span class="breadcrumb-item active">${escapeHTML(segment)}</span>`;
-      } else {
-        html += `<a href="#" class="breadcrumb-item" onclick="window.DocPortal.navigateToBreadcrumb(${idx}); return false;">${escapeHTML(segment)}</a>`;
-      }
+      html += `<span class="breadcrumb-crumb ${isLast ? 'active' : ''}" onclick="window.DocPortal.navigateToBreadcrumb(${idx})">${escapeHTML(folder)}</span>`;
     });
 
     breadcrumbsNav.innerHTML = html;
+    btnBack.classList.toggle('hidden', state.currentPath.length === 0);
+  }
 
-    if (state.currentPath.length === 0) {
-      currentFolderTitle.innerHTML = 'Location: <strong>Documents Root</strong>';
-    } else {
-      const folderName = state.currentPath[state.currentPath.length - 1];
-      currentFolderTitle.innerHTML = `Location: <strong>${escapeHTML(folderName)}</strong>`;
+  /**
+   * Select File & Right Inspector Drawer Controller
+   */
+  async function selectFileItem(filename, relPath) {
+    const cleanPath = (relPath || '').replace(/^\/+/, '');
+    const ext = getFileExtension(filename);
+    const extInfo = extensionMap[ext] || { icon: '📄' };
+
+    inspectorIcon.textContent = extInfo.icon;
+    inspectorFilename.textContent = filename;
+    inspectorSize.textContent = 'Loading...';
+    inspectorMtime.textContent = '-';
+    inspectorPath.textContent = `/documents/${cleanPath}`;
+    inspectorSha256.textContent = 'Computing SHA-256...';
+    btnInspectorDownload.href = `/documents/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}`;
+
+    inspectorPanel.classList.remove('hidden');
+
+    try {
+      const encodedPath = encodeURIComponent(cleanPath).replace(/%2F/g, '/');
+      const res = await fetch(`/api/documents/metadata/${encodedPath}`);
+      if (res.ok) {
+        const data = await res.json();
+        inspectorSize.textContent = formatFileSize(data.size);
+        inspectorMtime.textContent = formatDate(new Date(data.mtime * 1000));
+        inspectorSha256.textContent = data.sha256;
+
+        btnInspectorDelete.onclick = () => {
+          handleDeleteClick(filename, cleanPath);
+        };
+      } else {
+        inspectorSha256.textContent = 'Metadata unavailable';
+      }
+    } catch (e) {
+      inspectorSha256.textContent = 'Error computing checksum';
     }
   }
 
   /**
-   * Open Modal Document & Video Viewer
+   * Resumable Upload Engine & Floating Widget Controller
    */
-  async function openViewer(name, url, ext) {
-    modalTitle.textContent = name;
-    modalExtBadge.textContent = (ext || 'file').toUpperCase();
-    modalExternalBtn.href = url;
-    modalDownloadBtn.href = url;
+  const DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB Chunks
+  const INITIAL_CONCURRENCY = 2;
+  const DEFAULT_CONCURRENCY = 4;
+  const MAX_CONCURRENCY_CAP = 6;
 
-    const extInfo = extensionMap[ext] || { category: 'other' };
-
-    modalBody.innerHTML = '<div style="padding: 2rem; text-align: center;">Loading preview...</div>';
-    viewerModal.classList.remove('hidden');
-
-    if (extInfo.category === 'pdf') {
-      modalBody.innerHTML = `<iframe class="modal-iframe" src="${url}" title="PDF Preview"></iframe>`;
-    } else if (extInfo.category === 'image') {
-      modalBody.innerHTML = `<img class="modal-image" src="${url}" alt="${escapeHTML(name)}">`;
-    } else if (ext === 'mp4' || ext === 'webm') {
-      modalBody.innerHTML = `
-        <video class="modal-video-preview" controls autoplay preload="metadata">
-          <source src="${url}" type="video/${ext}">
-          Your browser does not support HTML5 video preview.
-        </video>
-      `;
-    } else if (['txt', 'md', 'csv', 'json', 'log'].includes(ext)) {
-      try {
-        const textRes = await fetch(url);
-        const textContent = await textRes.text();
-        modalBody.innerHTML = `<pre class="modal-text-preview"><code>${escapeHTML(textContent)}</code></pre>`;
-      } catch (e) {
-        renderModalFallback(name, url);
-      }
-    } else {
-      renderModalFallback(name, url);
-    }
-  }
-
-  function renderModalFallback(name, url) {
-    modalBody.innerHTML = `
-      <div class="modal-fallback">
-        <div class="empty-icon" style="margin-bottom: 1rem;">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-          </svg>
-        </div>
-        <h3 style="margin-bottom: 0.5rem; font-size: 1.1rem;">Direct Download Required</h3>
-        <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1.5rem;">
-          This file format cannot be displayed directly in the web browser preview.
-        </p>
-        <a href="${url}" download class="btn-secondary" style="display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none;">
-          Download File
-        </a>
-      </div>
-    `;
-  }
-
-  function closeModal() {
-    viewerModal.classList.add('hidden');
-    modalBody.innerHTML = '';
-  }
-
-  /* ==========================================================================
-     Admin Auth & Upload Drawer Logic
-     ========================================================================== */
-
-  function handleOpenUploadClick() {
-    if (state.isAuthenticated) {
-      openUploadDrawer();
-    } else {
-      authPasswordInput.value = '';
-      authErrorMsg.classList.add('hidden');
-      authModal.classList.remove('hidden');
-      authPasswordInput.focus();
-    }
-  }
-
-  async function handleAuthSubmit(e) {
-    e.preventDefault();
-    const password = authPasswordInput.value;
-    authErrorMsg.classList.add('hidden');
-
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        state.isAuthenticated = true;
-        state.csrfToken = data.csrfToken || '';
-        authModal.classList.add('hidden');
-        updateHeaderAuthUI();
-        render();
-        showToast('✓ Logged in as Administrator');
-
-        if (state.pendingDeleteTarget) {
-          const { name, relPath, isFolder, itemCount } = state.pendingDeleteTarget;
-          state.pendingDeleteTarget = null;
-          openDeleteModal(name, relPath, isFolder, itemCount);
-        }
-      } else {
-        const errData = await res.json();
-        authErrorMsg.textContent = errData.detail || 'Invalid credentials.';
-        authErrorMsg.classList.remove('hidden');
-      }
-    } catch (err) {
-      authErrorMsg.textContent = 'Server error. Please try again.';
-      authErrorMsg.classList.remove('hidden');
-    }
-  }
-
-  async function handleAdminLogout() {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-    } catch (e) {}
-    state.isAuthenticated = false;
-    state.csrfToken = '';
-    uploadModal.classList.add('hidden');
-    updateHeaderAuthUI();
-    render();
-    showToast('Logged out successfully');
-  }
-
-  function updateHeaderAuthUI() {
-    const btnOpenUpload = document.getElementById('btn-open-upload');
-    const btnAdminAuth = document.getElementById('btn-admin-auth');
-    const btnAdminLogoutHeader = document.getElementById('btn-admin-logout-header');
-    const btnTrashBin = document.getElementById('btn-trash-bin');
-
-    if (state.isAuthenticated) {
-      if (btnAdminAuth) btnAdminAuth.classList.add('hidden');
-      if (btnOpenUpload) btnOpenUpload.classList.remove('hidden');
-      if (btnAdminLogoutHeader) btnAdminLogoutHeader.classList.remove('hidden');
-      if (btnTrashBin) btnTrashBin.classList.remove('hidden');
-    } else {
-      if (btnAdminAuth) btnAdminAuth.classList.remove('hidden');
-      if (btnOpenUpload) btnOpenUpload.classList.add('hidden');
-      if (btnAdminLogoutHeader) btnAdminLogoutHeader.classList.add('hidden');
-      if (btnTrashBin) btnTrashBin.classList.add('hidden');
-    }
-  }
-
-  async function openUploadDrawer() {
-    // Default selected path to current viewing folder if any
-    state.selectedUploadPath = state.currentPath.join('/');
-    selectedFolderDisplay.textContent = state.selectedUploadPath ? `Documents / ${state.selectedUploadPath}` : 'Documents Root';
+  function handleFileSelect(files) {
+    if (!files || files.length === 0) return;
     
-    uploadModal.classList.remove('hidden');
-    await fetchAndRenderFolderTree();
-  }
-
-  async function fetchAndRenderFolderTree() {
-    folderTreeContainer.innerHTML = '<div style="padding: 1rem; color: var(--text-muted);">Loading folder tree...</div>';
-    try {
-      const res = await fetch('/api/folders');
-      if (res.ok) {
-        state.folderTreeData = await res.json();
-        renderFolderTree();
-      }
-    } catch (err) {
-      folderTreeContainer.innerHTML = '<div style="padding: 1rem; color: var(--danger);">Failed to load folders.</div>';
-    }
-  }
-
-  function renderFolderTree() {
-    if (!state.folderTreeData) return;
-
-    function buildNodeHTML(node) {
-      const isSelected = node.path === state.selectedUploadPath;
-      const displayName = node.name === 'Documents' ? '📁 Documents Root' : `📁 ${escapeHTML(node.name)}`;
-
-      let html = `
-        <div class="tree-node ${isSelected ? 'selected' : ''}" data-path="${escapeHTML(node.path)}">
-          <span>${displayName}</span>
-        </div>
-      `;
-
-      if (node.children && node.children.length > 0) {
-        html += `<div class="tree-children">`;
-        node.children.forEach(child => {
-          html += buildNodeHTML(child);
-        });
-        html += `</div>`;
-      }
-      return html;
-    }
-
-    folderTreeContainer.innerHTML = buildNodeHTML(state.folderTreeData);
-
-    // Add node click listeners
-    folderTreeContainer.querySelectorAll('.tree-node').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        folderTreeContainer.querySelectorAll('.tree-node').forEach(n => n.classList.remove('selected'));
-        el.classList.add('selected');
-
-        state.selectedUploadPath = el.dataset.path;
-        selectedFolderDisplay.textContent = state.selectedUploadPath ? `Documents / ${state.selectedUploadPath}` : 'Documents Root';
-      });
-    });
-  }
-
-  /* Independent Stateful Upload Queue Architecture */
-  const MAX_CONCURRENT_UPLOADS = 2;
-  state.uploadQueue = []; // items: { id, file, folderPath, status, progressPct, uploadedMB, totalMB, speedMBs, etaSec, errorMsg, xhr, replace }
-
-  function getFriendlyErrorMessage(status, rawError) {
-    if (!status || status === 0) {
-      return "Connection interrupted. Please check your network connection and try again.";
-    }
-    if (status === 413) {
-      return "This file is too large. The maximum allowed size is 2 GB.";
-    }
-    if (status === 401) {
-      return "Your upload session has expired. Please sign in again.";
-    }
-    if (status === 403) {
-      return "You don't have permission to upload to this folder.";
-    }
-    if (status === 415) {
-      return "This file type isn't supported.";
-    }
-    if (status === 507) {
-      return "The server doesn't have enough storage space for this file.";
-    }
-    if (status === 409) {
-      return "A file with this name already exists in the destination folder.";
-    }
-    if (status === 504 || status === 408) {
-      return "The upload took too long and was interrupted. Please try again.";
-    }
-    return rawError || "Something went wrong while uploading this file. Please try again.";
-  }
-
-  function getFileIcon(filename) {
-    const ext = filename.split('.').pop().toLowerCase();
-    if (['mp4', 'webm', 'mkv', 'mov', 'avi', 'm4v', '3gp'].includes(ext)) return '🎬';
-    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return '🖼️';
-    if (['zip', 'tar', 'gz', '7z', 'rar'].includes(ext)) return '📦';
-    if (ext === 'pdf') return '📄';
-    return '📁';
-  }
-
-  function addFilesToQueue(files) {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const item = {
         id: `upload_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
         file: file,
-        folderPath: state.selectedUploadPath || '',
-        status: 'queued', // queued, uploading, completed, failed, cancelled
+        folderPath: state.currentPath.join('/'),
+        status: 'queued',
         progressPct: 0,
         uploadedMB: '0.0',
         totalMB: (file.size / (1024 * 1024)).toFixed(1),
         speedMBs: '0.0',
+        speedMbps: '0.0',
         etaSec: 0,
-        errorMsg: '',
-        xhr: null,
-        replace: false
+        activeWorkers: INITIAL_CONCURRENCY,
+        errorMsg: ''
       };
       state.uploadQueue.push(item);
     }
-    renderUploadQueue();
+    renderUploadQueueWidget();
+    processUploadQueue();
   }
 
-  function renderUploadQueue() {
+  function renderUploadQueueWidget() {
     if (!state.uploadQueue || state.uploadQueue.length === 0) {
-      fileQueueContainer.classList.add('hidden');
+      floatingUploader.classList.add('hidden');
       return;
     }
 
-    fileQueueContainer.classList.remove('hidden');
-
-    const total = state.uploadQueue.length;
-    const completed = state.uploadQueue.filter(i => i.status === 'completed').length;
-    const uploading = state.uploadQueue.filter(i => i.status === 'uploading').length;
-    const failed = state.uploadQueue.filter(i => i.status === 'failed').length;
-    const queued = state.uploadQueue.filter(i => i.status === 'queued').length;
-
-    const summaryText = document.getElementById('queue-summary-text');
-    if (summaryText) {
-      if (uploading > 0 || queued > 0) {
-        summaryText.textContent = `Uploading ${completed + uploading} of ${total} (✓ ${completed} completed, ↻ ${uploading} active, ✕ ${failed} failed)`;
-      } else if (failed > 0) {
-        summaryText.textContent = `${completed} uploaded successfully. ${failed} file${failed > 1 ? 's need' : ' needs'} attention.`;
-      } else {
-        summaryText.textContent = `All ${completed} upload${completed > 1 ? 's' : ''} completed successfully!`;
-      }
-    }
-
-    fileQueueList.innerHTML = state.uploadQueue.map(item => {
-      const icon = getFileIcon(item.file.name);
-      
-      let badgeHTML = `<span class="card-status-badge badge-${item.status}">${item.status.toUpperCase()}</span>`;
-      let progressFillClass = item.status === 'completed' ? 'card-completed-bar' : '';
+    floatingUploader.classList.remove('hidden');
+    uploaderWidgetBody.innerHTML = state.uploadQueue.map(item => {
+      const ext = getFileExtension(item.file.name);
+      const extInfo = extensionMap[ext] || { icon: '📄' };
 
       let metaText = `${item.uploadedMB} / ${item.totalMB} MB`;
       if (item.status === 'uploading') {
         const mbpsText = item.speedMbps ? ` (${item.speedMbps} Mbps)` : '';
-        const workersText = item.activeWorkers ? ` • ⚡ ${item.activeWorkers} parallel workers` : '';
+        const workersText = item.activeWorkers ? ` • ⚡ ${item.activeWorkers} workers` : '';
         metaText += ` • ${item.speedMBs} MB/s${mbpsText} • ${item.etaSec}s left${workersText}`;
       } else if (item.status === 'completed') {
         metaText = `${item.totalMB} MB • Uploaded cleanly`;
       }
 
-      let actionsHTML = '';
-      if (item.status === 'uploading') {
-        actionsHTML = `<button type="button" class="btn-card-cancel" onclick="window.DocPortal.cancelUpload('${item.id}')">Cancel</button>`;
-      } else if (item.status === 'failed') {
-        actionsHTML = `
-          <button type="button" class="btn-card-retry" onclick="window.DocPortal.retryUpload('${item.id}')">Try Again</button>
-          <button type="button" class="btn-card-remove" onclick="window.DocPortal.removeQueueItem('${item.id}')">Remove</button>
-        `;
-      } else if (item.status === 'queued' || item.status === 'cancelled') {
-        actionsHTML = `<button type="button" class="btn-card-remove" onclick="window.DocPortal.removeQueueItem('${item.id}')">Remove</button>`;
-      }
-
-      let errorBoxHTML = item.errorMsg ? `<div class="card-error-box">${escapeHTML(item.errorMsg)}</div>` : '';
-
       return `
-        <div class="file-upload-card state-${item.status}">
-          <div class="card-top-row">
-            <div class="card-file-name-group">
-              <span class="card-file-icon">${icon}</span>
-              <span class="card-file-name" title="${escapeHTML(item.file.name)}">${escapeHTML(item.file.name)}</span>
-            </div>
-            ${badgeHTML}
+        <div class="upload-card-item">
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8125rem;">
+            <span style="font-weight: 600; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 220px;">${extInfo.icon} ${escapeHTML(item.file.name)}</span>
+            <span style="font-size: 0.75rem; color: var(--primary-light); font-weight: 700;">${item.progressPct}%</span>
           </div>
-          <div class="card-progress-bar-bg">
-            <div class="card-progress-bar-fill ${progressFillClass}" style="width: ${item.progressPct}%;"></div>
+          <div class="upload-progress-bar-bg">
+            <div class="upload-progress-bar-fill" style="width: ${item.progressPct}%;"></div>
           </div>
-          <div class="card-meta-row">
+          <div style="font-size: 0.6875rem; color: var(--text-muted); display: flex; justify-content: space-between;">
             <span>${metaText}</span>
-            <span>${item.progressPct}%</span>
+            <button class="btn-icon" style="padding: 0; font-size: 0.75rem;" onclick="window.DocPortal.cancelUpload('${item.id}')">✕</button>
           </div>
-          ${errorBoxHTML}
-          ${actionsHTML ? `<div class="card-actions-row">${actionsHTML}</div>` : ''}
         </div>
       `;
     }).join('');
@@ -899,27 +537,18 @@
 
   function processUploadQueue() {
     const activeTasks = state.uploadQueue.filter(i => i.status === 'uploading');
-    const availableSlots = MAX_CONCURRENT_UPLOADS - activeTasks.length;
-
-    if (availableSlots <= 0) return;
+    if (activeTasks.length >= 2) return;
 
     const queuedTasks = state.uploadQueue.filter(i => i.status === 'queued');
-    for (let i = 0; i < Math.min(availableSlots, queuedTasks.length); i++) {
-      startSingleTaskUpload(queuedTasks[i]);
+    if (queuedTasks.length > 0) {
+      startSingleTaskUpload(queuedTasks[0]);
     }
   }
-
-  /* Adaptive Parallel Chunk Upload Engine */
-  const DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB
-  const INITIAL_CONCURRENCY = 2;
-  const DEFAULT_CONCURRENCY = 4;
-  const MAX_CONCURRENCY_CAP = 6;
 
   async function startSingleTaskUpload(item) {
     item.status = 'uploading';
     item.errorMsg = '';
-    item.activeWorkers = INITIAL_CONCURRENCY;
-    renderUploadQueue();
+    renderUploadQueueWidget();
 
     if (item.file.size <= DEFAULT_CHUNK_SIZE) {
       uploadFileSingleRequest(item);
@@ -929,98 +558,38 @@
     try {
       const totalChunks = Math.ceil(item.file.size / DEFAULT_CHUNK_SIZE);
 
-      let uploadId = item.uploadId;
-      let alreadyUploaded = new Set();
-      let initConcurrency = DEFAULT_CONCURRENCY;
-      let maxConcurrency = MAX_CONCURRENCY_CAP;
+      const initRes = await fetch('/api/upload/init', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': state.csrfToken || ''
+        },
+        body: JSON.stringify({
+          filename: item.file.name,
+          folderPath: item.folderPath,
+          totalSize: item.file.size,
+          totalChunks: totalChunks,
+          replace: true
+        })
+      });
 
-      if (!uploadId) {
-        const initRes = await fetch('/api/upload/init', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': state.csrfToken || ''
-          },
-          body: JSON.stringify({
-            filename: item.file.name,
-            folderPath: item.folderPath,
-            totalSize: item.file.size,
-            totalChunks: totalChunks,
-            replace: item.replace || false
-          })
-        });
-
-        if (initRes.status === 409) {
-          state.duplicateContext = { item };
-          duplicateMsgText.textContent = `File "${item.file.name}" already exists in ${item.folderPath || 'Documents Root'}. Do you want to replace it?`;
-          duplicateModal.classList.remove('hidden');
-          item.status = 'queued';
-          renderUploadQueue();
-          return;
-        }
-
-        if (!initRes.ok) {
-          const errData = await initRes.json().catch(() => ({}));
-          item.status = 'failed';
-          item.errorMsg = getFriendlyErrorMessage(initRes.status, errData.detail);
-          renderUploadQueue();
-          processUploadQueue();
-          return;
-        }
-
-        const initData = await initRes.json();
-        uploadId = initData.uploadId;
-        item.uploadId = uploadId;
-        if (initData.concurrency) initConcurrency = initData.concurrency;
-        if (initData.maxConcurrency) maxConcurrency = initData.maxConcurrency;
-        if (initData.uploadedChunks) alreadyUploaded = new Set(initData.uploadedChunks);
-      } else {
-        const statusRes = await fetch(`/api/upload/status/${uploadId}`, {
-          headers: { 'X-CSRF-Token': state.csrfToken || '' }
-        });
-        if (statusRes.ok) {
-          const sData = await statusRes.json();
-          if (sData.uploadedChunks) alreadyUploaded = new Set(sData.uploadedChunks);
-        }
-      }
-
-      const pendingQueue = [];
-      for (let i = 0; i < totalChunks; i++) {
-        if (!alreadyUploaded.has(i)) {
-          pendingQueue.push(i);
-        }
-      }
-
-      let uploadedBytes = Array.from(alreadyUploaded).reduce((acc, idx) => {
-        const start = idx * DEFAULT_CHUNK_SIZE;
-        const end = Math.min(start + DEFAULT_CHUNK_SIZE, item.file.size);
-        return acc + (end - start);
-      }, 0);
-
-      item.uploadedMB = (uploadedBytes / (1024 * 1024)).toFixed(1);
-      item.progressPct = Math.round((uploadedBytes / item.file.size) * 100);
-      renderUploadQueue();
-
-      if (pendingQueue.length === 0) {
-        await finalizeResumableUpload(item, uploadId);
+      if (!initRes.ok) {
+        item.status = 'failed';
+        item.errorMsg = 'Upload init failed';
+        renderUploadQueueWidget();
+        processUploadQueue();
         return;
       }
 
+      const initData = await initRes.json();
+      const uploadId = initData.uploadId;
+      const pendingQueue = Array.from({ length: totalChunks }, (_, i) => i);
+      let uploadedBytes = 0;
       const startTime = Date.now();
       let activeWorkerCount = INITIAL_CONCURRENCY;
-      let consecutiveSuccesses = 0;
-      let isAborted = false;
-      let activeControllers = [];
-
-      item.abortControllers = activeControllers;
 
       const runWorker = async () => {
-        while (pendingQueue.length > 0 && !isAborted) {
-          if (item.status === 'paused' || item.status === 'cancelled') {
-            isAborted = true;
-            return;
-          }
-
+        while (pendingQueue.length > 0 && item.status === 'uploading') {
           const chunkIndex = pendingQueue.shift();
           if (chunkIndex === undefined) break;
 
@@ -1029,129 +598,66 @@
           const chunkBlob = item.file.slice(start, end);
           const chunkSize = end - start;
 
-          let success = false;
-          let attempt = 0;
-          const maxAttempts = 5;
+          const formData = new FormData();
+          formData.append('uploadId', uploadId);
+          formData.append('chunkIndex', chunkIndex);
+          formData.append('chunk', chunkBlob, item.file.name);
 
-          while (!success && attempt < maxAttempts && !isAborted) {
-            if (item.status === 'paused' || item.status === 'cancelled') {
-              isAborted = true;
-              return;
+          try {
+            const chunkRes = await fetch('/api/upload/chunk', {
+              method: 'POST',
+              headers: { 'X-CSRF-Token': state.csrfToken || '' },
+              body: formData
+            });
+
+            if (chunkRes.ok) {
+              uploadedBytes += chunkSize;
+              item.progressPct = Math.round((uploadedBytes / item.file.size) * 100);
+              const elapsedSec = (Date.now() - startTime) / 1000;
+              const speedBps = elapsedSec > 0 ? (uploadedBytes / elapsedSec) : 0;
+              const speedMBsNum = (speedBps / (1024 * 1024));
+              item.speedMBs = speedMBsNum.toFixed(1);
+              item.speedMbps = (speedMBsNum * 8).toFixed(1);
+              item.etaSec = speedBps > 0 ? Math.ceil((item.file.size - uploadedBytes) / speedBps) : 0;
+              item.uploadedMB = (uploadedBytes / (1024 * 1024)).toFixed(1);
+
+              renderUploadQueueWidget();
+            } else {
+              pendingQueue.unshift(chunkIndex);
             }
-            attempt++;
-
-            try {
-              const controller = new AbortController();
-              activeControllers.push(controller);
-
-              const formData = new FormData();
-              formData.append('uploadId', uploadId);
-              formData.append('chunkIndex', chunkIndex);
-              formData.append('chunk', chunkBlob, item.file.name);
-
-              const chunkRes = await fetch('/api/upload/chunk', {
-                method: 'POST',
-                headers: { 'X-CSRF-Token': state.csrfToken || '' },
-                signal: controller.signal,
-                body: formData
-              });
-
-              activeControllers = activeControllers.filter(c => c !== controller);
-
-              if (chunkRes.ok) {
-                success = true;
-                uploadedBytes += chunkSize;
-                consecutiveSuccesses++;
-
-                if (consecutiveSuccesses >= 3 && activeWorkerCount < maxConcurrency) {
-                  activeWorkerCount = Math.min(activeWorkerCount + 1, maxConcurrency);
-                  item.activeWorkers = activeWorkerCount;
-                  consecutiveSuccesses = 0;
-                }
-
-                item.progressPct = Math.round((uploadedBytes / item.file.size) * 100);
-                const elapsedSec = (Date.now() - startTime) / 1000;
-                const speedBps = elapsedSec > 0 ? (uploadedBytes / elapsedSec) : 0;
-                const speedMBsNum = (speedBps / (1024 * 1024));
-                item.speedMBs = speedMBsNum.toFixed(1);
-                item.speedMbps = (speedMBsNum * 8).toFixed(1);
-                
-                const remainingBytes = item.file.size - uploadedBytes;
-                item.etaSec = speedBps > 0 ? Math.ceil(remainingBytes / speedBps) : 0;
-                item.uploadedMB = (uploadedBytes / (1024 * 1024)).toFixed(1);
-
-                renderUploadQueue();
-              } else if (chunkRes.status === 429 || chunkRes.status >= 500) {
-                activeWorkerCount = Math.max(2, activeWorkerCount - 1);
-                item.activeWorkers = activeWorkerCount;
-                consecutiveSuccesses = 0;
-                await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 500));
-              } else {
-                await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 500));
-              }
-            } catch (e) {
-              if (e.name === 'AbortError') {
-                isAborted = true;
-                return;
-              }
-              activeWorkerCount = Math.max(2, activeWorkerCount - 1);
-              item.activeWorkers = activeWorkerCount;
-              consecutiveSuccesses = 0;
-              await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 500));
-            }
-          }
-
-          if (!success && !isAborted) {
+          } catch (e) {
             pendingQueue.unshift(chunkIndex);
-            item.status = 'failed';
-            item.errorMsg = 'Network error uploading chunk. Click Try Again to resume.';
-            renderUploadQueue();
-            processUploadQueue();
-            return;
           }
         }
       };
 
-      const workers = [];
-      for (let w = 0; w < initConcurrency; w++) {
-        workers.push(runWorker());
-      }
+      const workers = [runWorker(), runWorker(), runWorker(), runWorker()];
       await Promise.all(workers);
 
-      if (item.status === 'uploading' && !isAborted) {
-        await finalizeResumableUpload(item, uploadId);
-      }
+      const completeRes = await fetch('/api/upload/complete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': state.csrfToken || ''
+        },
+        body: JSON.stringify({ uploadId: uploadId, replace: true })
+      });
 
+      if (completeRes.ok) {
+        item.status = 'completed';
+        item.progressPct = 100;
+        showToast(`✓ Uploaded ${item.file.name} cleanly`);
+        renderUploadQueueWidget();
+        processUploadQueue();
+        if (state.activeView === 'files') loadCurrentFolder();
+      } else {
+        item.status = 'failed';
+        renderUploadQueueWidget();
+        processUploadQueue();
+      }
     } catch (e) {
       item.status = 'failed';
-      item.errorMsg = 'Upload exception: ' + e.message;
-      renderUploadQueue();
-      processUploadQueue();
-    }
-  }
-
-  async function finalizeResumableUpload(item, uploadId) {
-    const completeRes = await fetch('/api/upload/complete', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-Token': state.csrfToken || ''
-      },
-      body: JSON.stringify({ uploadId: uploadId, replace: item.replace || false })
-    });
-
-    if (completeRes.ok) {
-      item.status = 'completed';
-      item.progressPct = 100;
-      item.uploadedMB = item.totalMB;
-      renderUploadQueue();
-      processUploadQueue();
-      loadCurrentFolder();
-    } else {
-      const errData = await completeRes.json().catch(() => ({}));
-      item.status = 'failed';
-      item.errorMsg = getFriendlyErrorMessage(completeRes.status, errData.detail);
-      renderUploadQueue();
+      renderUploadQueueWidget();
       processUploadQueue();
     }
   }
@@ -1163,7 +669,7 @@
     const formData = new FormData();
     formData.append('file', item.file);
     formData.append('folderPath', item.folderPath);
-    formData.append('replace', item.replace ? 'true' : 'false');
+    formData.append('replace', 'true');
 
     xhr.open('POST', '/api/upload', true);
     if (state.csrfToken) {
@@ -1173,19 +679,17 @@
     const startTime = Date.now();
 
     xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && item.status === 'uploading') {
+      if (e.lengthComputable) {
         item.progressPct = Math.round((e.loaded / e.total) * 100);
         const elapsedSec = (Date.now() - startTime) / 1000;
         const speedBps = elapsedSec > 0 ? (e.loaded / elapsedSec) : 0;
         const speedMBsNum = (speedBps / (1024 * 1024));
         item.speedMBs = speedMBsNum.toFixed(1);
         item.speedMbps = (speedMBsNum * 8).toFixed(1);
-        
-        const remainingBytes = e.total - e.loaded;
-        item.etaSec = speedBps > 0 ? Math.ceil(remainingBytes / speedBps) : 0;
+        item.etaSec = speedBps > 0 ? Math.ceil((e.total - e.loaded) / speedBps) : 0;
         item.uploadedMB = (e.loaded / (1024 * 1024)).toFixed(1);
 
-        renderUploadQueue();
+        renderUploadQueueWidget();
       }
     };
 
@@ -1194,43 +698,15 @@
       if (xhr.status === 200) {
         item.status = 'completed';
         item.progressPct = 100;
-        item.uploadedMB = item.totalMB;
-        renderUploadQueue();
+        showToast(`✓ Uploaded ${item.file.name}`);
+        renderUploadQueueWidget();
         processUploadQueue();
-        loadCurrentFolder();
-      } else if (xhr.status === 409) {
-        state.duplicateContext = { item };
-        duplicateMsgText.textContent = `File "${item.file.name}" already exists in ${item.folderPath || 'Documents Root'}. Do you want to replace it?`;
-        duplicateModal.classList.remove('hidden');
+        if (state.activeView === 'files') loadCurrentFolder();
       } else {
         item.status = 'failed';
-        let detail = '';
-        try {
-          const errData = JSON.parse(xhr.responseText);
-          detail = errData.detail || '';
-        } catch (e) {}
-        item.errorMsg = getFriendlyErrorMessage(xhr.status, detail);
-        renderUploadQueue();
+        renderUploadQueueWidget();
         processUploadQueue();
       }
-    };
-
-    xhr.onerror = () => {
-      item.xhr = null;
-      if (item.status !== 'cancelled') {
-        item.status = 'failed';
-        item.errorMsg = getFriendlyErrorMessage(0, '');
-        renderUploadQueue();
-        processUploadQueue();
-      }
-    };
-
-    xhr.onabort = () => {
-      item.xhr = null;
-      item.status = 'cancelled';
-      item.errorMsg = 'Upload cancelled by user.';
-      renderUploadQueue();
-      processUploadQueue();
     };
 
     xhr.send(formData);
@@ -1239,80 +715,268 @@
   function cancelUpload(itemId) {
     const item = state.uploadQueue.find(i => i.id === itemId);
     if (item) {
-      if (item.abortControllers) {
-        item.abortControllers.forEach(c => c.abort());
-      }
-      if (item.xhr) {
-        item.xhr.abort();
-      }
+      if (item.xhr) item.xhr.abort();
       item.status = 'cancelled';
-      renderUploadQueue();
+      renderUploadQueueWidget();
       processUploadQueue();
     }
   }
 
-  function retryUpload(itemId) {
-    const item = state.uploadQueue.find(i => i.id === itemId);
-    if (item) {
-      item.status = 'queued';
-      item.errorMsg = '';
-      item.progressPct = 0;
-      item.uploadedMB = '0.0';
-      renderUploadQueue();
-      processUploadQueue();
-    }
-  }
+  /**
+   * Command Palette Search Controller (⌘K)
+   */
+  function setupCommandPalette() {
+    btnSearchTrigger.addEventListener('click', () => {
+      commandPaletteModal.classList.remove('hidden');
+      commandPaletteInput.value = '';
+      commandPaletteInput.focus();
+    });
 
-  function removeQueueItem(itemId) {
-    const idx = state.uploadQueue.findIndex(i => i.id === itemId);
-    if (idx !== -1) {
-      const item = state.uploadQueue[idx];
-      if (item.xhr) {
-        item.xhr.abort();
+    commandPaletteInput.addEventListener('input', async (e) => {
+      const q = e.target.value.trim();
+      if (!q) {
+        commandPaletteResults.innerHTML = `<div style="padding: 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.875rem;">Type to search server documents...</div>`;
+        return;
       }
-      state.uploadQueue.splice(idx, 1);
-      renderUploadQueue();
+
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        if (res.ok) {
+          const results = await res.json();
+          if (!results || results.length === 0) {
+            commandPaletteResults.innerHTML = `<div style="padding: 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.875rem;">No document matches found</div>`;
+            return;
+          }
+          commandPaletteResults.innerHTML = results.map(item => `
+            <div class="palette-result-item" onclick="window.DocPortal.selectFileItem('${escapeJS(item.name)}', '${escapeJS(item.path)}')">
+              <div>
+                <strong>📄 ${escapeHTML(item.name)}</strong>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">/${escapeHTML(item.path)}</div>
+              </div>
+              <span style="font-size: 0.75rem; color: var(--primary-light); font-weight: 700;">${formatFileSize(item.size)}</span>
+            </div>
+          `).join('');
+        }
+      } catch (err) {
+        commandPaletteResults.innerHTML = `<div style="padding: 1.5rem; text-align: center; color: var(--danger); font-size: 0.875rem;">Search error</div>`;
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        commandPaletteModal.classList.remove('hidden');
+        commandPaletteInput.focus();
+      } else if (e.key === 'Escape') {
+        commandPaletteModal.classList.add('hidden');
+        authModal.classList.add('hidden');
+        inspectorPanel.classList.add('hidden');
+      }
+    });
+
+    commandPaletteModal.addEventListener('click', (e) => {
+      if (e.target === commandPaletteModal) commandPaletteModal.classList.add('hidden');
+    });
+  }
+
+  /**
+   * Delete & Trash Operations
+   */
+  async function handleDeleteClick(filename, cleanPath) {
+    if (!confirm(`Are you sure you want to move '${filename}' to Trash?`)) return;
+
+    try {
+      const res = await fetch(`/api/documents/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}`, {
+        method: 'DELETE',
+        headers: { 'X-CSRF-Token': state.csrfToken || '' }
+      });
+
+      if (res.ok) {
+        showToast(`✓ '${filename}' moved to Trash`);
+        inspectorPanel.classList.add('hidden');
+        if (state.activeView === 'files') loadCurrentFolder();
+        if (state.activeView === 'trash') loadTrashList();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.detail || 'Failed to move to Trash.');
+      }
+    } catch (e) {
+      alert('Delete operation failed.');
     }
   }
 
-  function clearCompletedQueue() {
-    state.uploadQueue = state.uploadQueue.filter(i => i.status !== 'completed');
-    renderUploadQueue();
+  async function loadTrashList() {
+    const tbody = document.getElementById('trash-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1.5rem;">Loading trash contents...</td></tr>`;
+
+    try {
+      const res = await fetch('/api/trash');
+      if (res.ok) {
+        const list = await res.json();
+        if (!list || list.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1.5rem; color: var(--text-muted);">Trash is empty.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = list.map(item => `
+          <tr>
+            <td><strong>${escapeHTML(item.name)}</strong></td>
+            <td><code style="font-size: 0.75rem; color: var(--text-muted);">/${escapeHTML(item.original_path)}</code></td>
+            <td>${formatDate(new Date(item.deleted_at * 1000))}</td>
+            <td style="text-align: right;">
+              <button class="btn-secondary" style="font-size:0.75rem; padding: 3px 8px;" onclick="window.DocPortal.restoreTrashItem('${item.id}')">↩ Restore</button>
+              <button class="btn-secondary" style="font-size:0.75rem; padding: 3px 8px; color: var(--danger);" onclick="window.DocPortal.deleteTrashItem('${item.id}')">🗑️ Permanent Delete</button>
+            </td>
+          </tr>
+        `).join('');
+      } else {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1.5rem; color: var(--danger);">Admin sign in required to view trash.</td></tr>`;
+      }
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1.5rem; color: var(--danger);">Failed loading trash.</td></tr>`;
+    }
   }
 
-  function startUploadQueue() {
-    processUploadQueue();
+  async function restoreTrashItem(trashId) {
+    try {
+      const res = await fetch(`/api/trash/restore/${trashId}`, {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': state.csrfToken || '' }
+      });
+      if (res.ok) {
+        showToast('✓ Item restored successfully');
+        loadTrashList();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.detail || 'Could not restore item.');
+      }
+    } catch (e) {
+      alert('Error restoring item.');
+    }
+  }
+
+  async function deleteTrashItem(trashId) {
+    if (!confirm('Permanently delete this item? This action cannot be undone.')) return;
+    try {
+      const res = await fetch(`/api/trash/permanent/${trashId}`, {
+        method: 'DELETE',
+        headers: { 'X-CSRF-Token': state.csrfToken || '' }
+      });
+      if (res.ok) {
+        showToast('✓ Permanently deleted item');
+        loadTrashList();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.detail || 'Could not delete item.');
+      }
+    } catch (e) {
+      alert('Error deleting item.');
+    }
+  }
+
+  /**
+   * Storage Analytics Controller
+   */
+  async function loadStorageAnalytics() {
+    const container = document.getElementById('storage-metrics-container');
+    if (!container) return;
+    container.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--text-muted);">Loading storage metrics...</div>`;
+
+    try {
+      const res = await fetch('/api/storage/summary');
+      if (res.ok) {
+        const data = await res.json();
+        container.innerHTML = `
+          <div class="storage-overview-card" style="margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <strong>Disk Space Allocation</strong>
+              <span style="font-weight: 700; color: var(--primary-light);">${data.disk.used_percent}% Used</span>
+            </div>
+            <div class="storage-bar-bg" style="height: 16px; margin: 1rem 0;">
+              <div style="background: var(--primary-gradient); height: 100%; width: ${data.disk.used_percent}%;"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.8125rem; color: var(--text-muted);">
+              <span>Used: <strong>${formatFileSize(data.disk.used)}</strong></span>
+              <span>Total Capacity: <strong>${formatFileSize(data.disk.total)}</strong></span>
+            </div>
+          </div>
+
+          <h3 style="font-size: 1rem; font-weight: 700; margin-bottom: 1rem;">Top 10 Largest Storage Files</h3>
+          <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); overflow: hidden;">
+            <table class="documents-list-table">
+              <thead>
+                <tr>
+                  <th>File Name</th>
+                  <th>Path</th>
+                  <th style="text-align: right;">Size</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${(data.largest_files || []).map(f => `
+                  <tr onclick="window.DocPortal.selectFileItem('${escapeJS(f.name)}', '${escapeJS(f.path)}')">
+                    <td><strong>📄 ${escapeHTML(f.name)}</strong></td>
+                    <td><code style="font-size: 0.75rem; color: var(--text-muted);">/${escapeHTML(f.path)}</code></td>
+                    <td style="text-align: right; color: var(--primary-light); font-weight: 700;">${formatFileSize(f.size)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+    } catch (e) {
+      container.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--danger);">Failed loading storage analytics.</div>`;
+    }
+  }
+
+  /**
+   * Audit Activity Log Controller
+   */
+  async function loadAuditActivity() {
+    const container = document.getElementById('activity-log-timeline');
+    if (!container) return;
+    container.innerHTML = `<div style="padding: 1.5rem; text-align: center; color: var(--text-muted);">Loading audit timeline...</div>`;
+
+    try {
+      const res = await fetch('/api/admin/audit-logs');
+      if (res.ok) {
+        const logs = await res.json();
+        if (!logs || logs.length === 0) {
+          container.innerHTML = `<div style="padding: 1.5rem; text-align: center; color: var(--text-muted);">No audit activity recorded yet.</div>`;
+          return;
+        }
+        container.innerHTML = logs.reverse().slice(0, 50).map(log => `
+          <div style="padding: 0.75rem; background: var(--bg-card); border-radius: var(--radius-md); border: 1px solid var(--border-subtle); font-size: 0.8125rem;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+              <strong style="color: var(--primary-light);">${escapeHTML(log.action)}</strong>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">${formatDate(new Date(log.timestamp))}</span>
+            </div>
+            <div style="color: var(--text-muted); font-size: 0.75rem;">IP: ${escapeHTML(log.ip)} • Details: ${escapeHTML(JSON.stringify(log.details || {}))}</div>
+          </div>
+        `).join('');
+      } else {
+        container.innerHTML = `<div style="padding: 1.5rem; text-align: center; color: var(--danger);">Admin sign in required to view audit logs.</div>`;
+      }
+    } catch (e) {
+      container.innerHTML = `<div style="padding: 1.5rem; text-align: center; color: var(--danger);">Failed loading activity log.</div>`;
+    }
   }
 
   /**
    * Event Listeners Setup
    */
   function setupEventListeners() {
-    window.addEventListener('hashchange', parseHashAndNavigate);
+    // Navigation Buttons
+    navBtnDashboard.addEventListener('click', () => switchView('dashboard'));
+    navBtnFiles.addEventListener('click', () => switchView('files'));
+    navBtnTrash.addEventListener('click', () => switchView('trash'));
+    navBtnStorage.addEventListener('click', () => switchView('storage'));
+    navBtnActivity.addEventListener('click', () => switchView('activity'));
 
-    // Search Input
-    searchInput.addEventListener('input', (e) => {
-      state.searchQuery = e.target.value;
-      clearSearchBtn.classList.toggle('hidden', state.searchQuery === '');
-      applyFilterAndSort();
-    });
-
-    clearSearchBtn.addEventListener('click', () => {
-      searchInput.value = '';
-      state.searchQuery = '';
-      clearSearchBtn.classList.add('hidden');
-      applyFilterAndSort();
-      searchInput.focus();
-    });
-
-    resetSearchBtn.addEventListener('click', () => {
-      searchInput.value = '';
-      state.searchQuery = '';
-      clearSearchBtn.classList.add('hidden');
-      applyFilterAndSort();
-    });
-
-    // Navigation Controls
+    // View toggles
+    btnGridView.addEventListener('click', () => applyViewMode('grid'));
+    btnListView.addEventListener('click', () => applyViewMode('list'));
+    btnRefresh.addEventListener('click', () => loadCurrentFolder());
     btnBack.addEventListener('click', () => {
       if (state.currentPath.length > 0) {
         setPath(state.currentPath.slice(0, -1));
@@ -1324,312 +988,112 @@
       applyFilterAndSort();
     });
 
-    btnGridView.addEventListener('click', () => applyViewMode('grid'));
-    btnListView.addEventListener('click', () => applyViewMode('list'));
-    btnRefresh.addEventListener('click', () => loadCurrentFolder());
+    // Inspector close
+    btnCloseInspector.addEventListener('click', () => inspectorPanel.classList.add('hidden'));
+
+    // Copy SHA-256 Checksum
+    btnCopyInspectorSha256.addEventListener('click', () => {
+      const text = inspectorSha256.textContent;
+      if (text && text !== 'Computing SHA-256...') {
+        navigator.clipboard.writeText(text);
+        showToast('✓ SHA-256 copied to clipboard');
+      }
+    });
+
+    // Upload Triggers & File Inputs
+    btnOpenUpload.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files) handleFileSelect(e.target.files);
+    });
+
+    btnCloseUploaderWidget.addEventListener('click', () => floatingUploader.classList.add('hidden'));
 
     // Admin Auth Listeners
-    btnOpenUpload.addEventListener('click', handleOpenUploadClick);
-    
-    const btnAdminAuth = document.getElementById('btn-admin-auth');
-    const btnAdminLogoutHeader = document.getElementById('btn-admin-logout-header');
-    const btnStorage = document.getElementById('btn-storage-dashboard');
-    const btnStorageClose = document.getElementById('btn-storage-close');
-    const btnTrash = document.getElementById('btn-trash-bin');
-    const btnTrashClose = document.getElementById('btn-trash-close');
-    const btnTrashCloseFooter = document.getElementById('btn-trash-close-footer');
-    const btnMetaClose = document.getElementById('btn-meta-close');
-    const btnCopySha256 = document.getElementById('btn-copy-sha256');
-
-    if (btnStorage) btnStorage.addEventListener('click', openStorageModal);
-    if (btnStorageClose) btnStorageClose.addEventListener('click', () => document.getElementById('storage-modal').classList.add('hidden'));
-
-    if (btnTrash) btnTrash.addEventListener('click', openTrashModal);
-    if (btnTrashClose) btnTrashClose.addEventListener('click', () => document.getElementById('trash-modal').classList.add('hidden'));
-    if (btnTrashCloseFooter) btnTrashCloseFooter.addEventListener('click', () => document.getElementById('trash-modal').classList.add('hidden'));
-
-    if (btnMetaClose) btnMetaClose.addEventListener('click', () => document.getElementById('metadata-modal').classList.add('hidden'));
-    if (btnCopySha256) {
-      btnCopySha256.addEventListener('click', () => {
-        const text = document.getElementById('meta-sha256').textContent;
-        if (text && text !== 'Computing...') {
-          navigator.clipboard.writeText(text);
-          showToast('✓ SHA-256 copied to clipboard');
-        }
-      });
-    }
-
-    if (btnAdminAuth) {
-      btnAdminAuth.addEventListener('click', () => {
-        authPasswordInput.value = '';
-        authErrorMsg.classList.add('hidden');
-        authModal.classList.remove('hidden');
-        authPasswordInput.focus();
-      });
-    }
-
-    if (btnAdminLogoutHeader) {
-      btnAdminLogoutHeader.addEventListener('click', handleAdminLogout);
-    }
-
-    authForm.addEventListener('submit', handleAuthSubmit);
-    authCancelBtn.addEventListener('click', () => authModal.classList.add('hidden'));
-    authCloseBtn.addEventListener('click', () => authModal.classList.add('hidden'));
-    btnAdminLogout.addEventListener('click', handleAdminLogout);
-
-    uploadCloseBtn.addEventListener('click', () => uploadModal.classList.add('hidden'));
-
-    // Drag & Drop Dropzone Listeners
-    dropzone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      dropzone.classList.add('dragover');
-    });
-
-    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
-
-    dropzone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      dropzone.classList.remove('dragover');
-      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        addFilesToQueue(e.dataTransfer.files);
-      }
-    });
-
-    fileInput.addEventListener('change', (e) => {
-      if (e.target.files && e.target.files.length > 0) {
-        addFilesToQueue(e.target.files);
-      }
-    });
-
-    btnClearQueue.addEventListener('click', clearCompletedQueue);
-    btnStartUpload.addEventListener('click', () => startUploadQueue());
-
-    // Duplicate File Modal Buttons
-    btnDupCancel.addEventListener('click', () => {
-      duplicateModal.classList.add('hidden');
-      state.duplicateContext = null;
-    });
-
-    btnDupReplace.addEventListener('click', async () => {
-      duplicateModal.classList.add('hidden');
-      if (state.duplicateContext) {
-        const { file } = state.duplicateContext;
-        try {
-          await uploadSingleFile(file, state.selectedUploadPath, true);
-          alert(`File ${file.name} replaced successfully.`);
-          clearQueue();
-          uploadModal.classList.add('hidden');
-          loadCurrentFolder();
-        } catch (e) {
-          alert(`Failed to replace file: ${e.message}`);
-        }
-      }
-    });
-
-    // Preview Modal Close
-    modalCloseBtn.addEventListener('click', closeModal);
-    viewerModal.addEventListener('click', (e) => {
-      if (e.target === viewerModal) closeModal();
-    });
-
-    // Delete Modal Listeners
-    const btnDeleteCancel = document.getElementById('btn-delete-cancel');
-    const btnDeleteClose = document.getElementById('btn-delete-close');
-    const btnDeleteConfirm = document.getElementById('btn-delete-confirm');
-
-    if (btnDeleteCancel) btnDeleteCancel.addEventListener('click', closeDeleteModal);
-    if (btnDeleteClose) btnDeleteClose.addEventListener('click', closeDeleteModal);
-    if (btnDeleteConfirm) btnDeleteConfirm.addEventListener('click', performItemDelete);
-
-    // Shortcuts
-    document.addEventListener('keydown', (e) => {
-      if (e.key === '/' && document.activeElement !== searchInput) {
-        e.preventDefault();
-        searchInput.focus();
-      } else if (e.key === 'Escape') {
-        if (!viewerModal.classList.contains('hidden')) closeModal();
-        if (!authModal.classList.contains('hidden')) authModal.classList.add('hidden');
-        if (!uploadModal.classList.contains('hidden')) uploadModal.classList.add('hidden');
-        const delModal = document.getElementById('delete-modal');
-        if (delModal && !delModal.classList.contains('hidden')) closeDeleteModal();
-      }
-    });
-  }
-
-  /* Admin Delete Feature Controller */
-  let deleteTargetContext = null;
-
-  function handleDeleteClick(name, relPath, isFolder = false, itemCount = 0) {
-    if (!state.isAuthenticated) {
-      state.pendingDeleteTarget = { name, relPath, isFolder, itemCount };
+    const openAuthModal = () => {
       authPasswordInput.value = '';
       authErrorMsg.classList.add('hidden');
       authModal.classList.remove('hidden');
       authPasswordInput.focus();
-    } else {
-      openDeleteModal(name, relPath, isFolder, itemCount);
+    };
+
+    if (btnAdminAuthHeader) btnAdminAuthHeader.addEventListener('click', openAuthModal);
+    if (btnAdminAuthSidebar) btnAdminAuthSidebar.addEventListener('click', openAuthModal);
+    if (btnAuthCancel) btnAuthCancel.addEventListener('click', () => authModal.classList.add('hidden'));
+
+    if (btnAdminLogoutHeader) {
+      btnAdminLogoutHeader.addEventListener('click', async () => {
+        await fetch('/api/auth/logout', { method: 'POST' });
+        state.isAuthenticated = false;
+        updateAuthUI();
+        showToast('Logged out successfully');
+      });
     }
-  }
 
-  function openDeleteModal(name, relPath, isFolder = false, itemCount = 0) {
-    deleteTargetContext = { name, relPath, isFolder, itemCount };
+    authForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      authErrorMsg.classList.add('hidden');
 
-    const modal = document.getElementById('delete-modal');
-    const heading = document.getElementById('delete-modal-heading');
-    const itemName = document.getElementById('delete-item-name');
-    const warning = document.getElementById('delete-modal-warning');
-    const confirmBox = document.getElementById('delete-folder-confirm-box');
-    const folderInput = document.getElementById('delete-folder-input');
-    const errorBox = document.getElementById('delete-modal-error');
-    const btnConfirm = document.getElementById('btn-delete-confirm');
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: authPasswordInput.value })
+        });
 
-    if (!modal) return;
-
-    errorBox.classList.add('hidden');
-    errorBox.textContent = '';
-    btnConfirm.disabled = false;
-    btnConfirm.textContent = 'Delete Permanently';
-
-    itemName.textContent = name;
-
-    if (isFolder) {
-      heading.textContent = 'Delete Folder?';
-      if (itemCount > 0) {
-        warning.textContent = `This folder contains ${itemCount} item(s). All files inside will be permanently deleted.`;
-        confirmBox.classList.remove('hidden');
-        folderInput.value = '';
-        folderInput.focus();
-      } else {
-        warning.textContent = 'This empty folder will be permanently deleted.';
-        confirmBox.classList.add('hidden');
+        if (res.ok) {
+          const data = await res.json();
+          state.isAuthenticated = true;
+          state.csrfToken = data.csrfToken || '';
+          updateAuthUI();
+          authModal.classList.add('hidden');
+          showToast('✓ Admin login successful');
+        } else {
+          authErrorMsg.textContent = 'Invalid admin credentials';
+          authErrorMsg.classList.remove('hidden');
+        }
+      } catch (err) {
+        authErrorMsg.textContent = 'Login network error';
+        authErrorMsg.classList.remove('hidden');
       }
-    } else {
-      heading.textContent = 'Delete Document?';
-      warning.textContent = 'This file will be permanently deleted. This action cannot be undone.';
-      confirmBox.classList.add('hidden');
-    }
-
-    modal.classList.remove('hidden');
-  }
-
-  function closeDeleteModal() {
-    const modal = document.getElementById('delete-modal');
-    if (modal) modal.classList.add('hidden');
-    deleteTargetContext = null;
-  }
-
-  async function performItemDelete() {
-    if (!deleteTargetContext) return;
-    const { name, relPath, isFolder, itemCount } = deleteTargetContext;
-
-    const confirmBox = document.getElementById('delete-folder-confirm-box');
-    const folderInput = document.getElementById('delete-folder-input');
-    const errorBox = document.getElementById('delete-modal-error');
-    const btnConfirm = document.getElementById('btn-delete-confirm');
-    const btnCancel = document.getElementById('btn-delete-cancel');
-
-    if (isFolder && itemCount > 0 && !confirmBox.classList.contains('hidden')) {
-      if (folderInput.value.trim() !== 'DELETE') {
-        errorBox.textContent = 'Please type DELETE in exact uppercase to confirm folder deletion.';
-        errorBox.classList.remove('hidden');
-        return;
-      }
-    }
-
-    if (!state.csrfToken) {
-      await checkAuthStatus();
-    }
-
-    btnConfirm.disabled = true;
-    btnCancel.disabled = true;
-    btnConfirm.textContent = 'Deleting...';
-
-    const cleanPath = (relPath || '').replace(/^\/+/, '');
-    const encodedPath = encodeURIComponent(cleanPath).replace(/%2F/g, '/');
-    let url = `/api/documents/${encodedPath}`;
-    if (isFolder && itemCount > 0) {
-      url += '?confirm=true';
-    }
-
-    console.log('[DocVault Delete Request]', {
-      name,
-      cleanPath,
-      url,
-      method: 'DELETE',
-      csrfToken: state.csrfToken ? 'PRESENT' : 'MISSING'
     });
 
-    try {
-      const res = await fetch(url, {
-        method: 'DELETE',
-        credentials: 'include',
-        headers: {
-          'X-CSRF-Token': state.csrfToken || ''
-        }
-      });
-
-      console.log('[DocVault Delete Response]', {
-        status: res.status,
-        statusText: res.statusText
-      });
-
-      if (res.ok) {
-        closeDeleteModal();
-        showToast(`✓ "${name}" deleted successfully`);
-        loadCurrentFolder();
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        let msg = 'Server error. Please try again.';
-
-        if (res.status === 401) {
-          msg = 'Please log in as administrator.';
-        } else if (res.status === 403) {
-          msg = 'You do not have permission to delete this file.';
-        } else if (res.status === 404) {
-          msg = 'File no longer exists.';
-        } else if (res.status === 409) {
-          msg = 'Conflict: This folder contains items. Require explicit confirmation.';
-        } else if (res.status === 413) {
-          msg = 'File path or request payload is too large.';
-        } else if (res.status === 500) {
-          msg = 'Server error. Please try again.';
-        } else if (errData.detail) {
-          msg = errData.detail;
-        }
-
-        errorBox.textContent = msg;
-        errorBox.classList.remove('hidden');
-      }
-    } catch (e) {
-      console.error('[DocVault Delete Exception]', e);
-      errorBox.textContent = 'Network error. Could not complete deletion.';
-      errorBox.classList.remove('hidden');
-    } finally {
-      btnConfirm.disabled = false;
-      btnCancel.disabled = false;
-      btnConfirm.textContent = 'Delete Permanently';
-    }
+    setupCommandPalette();
   }
 
-  function showToast(message) {
-    const toast = document.getElementById('toast-notification');
-    const toastMsg = document.getElementById('toast-message');
-    if (toast && toastMsg) {
-      toastMsg.textContent = message;
-      toast.classList.remove('hidden');
-      setTimeout(() => {
-        toast.classList.add('hidden');
-      }, 3500);
-    }
-  }
-
+  /* Utility Helpers */
   function applyViewMode(mode) {
     state.viewMode = mode;
     localStorage.setItem('docvault_view_mode', mode);
-
     btnGridView.classList.toggle('active', mode === 'grid');
     btnListView.classList.toggle('active', mode === 'list');
-    render();
+    renderExplorer();
+  }
+
+  function setPath(newPathArr) {
+    state.currentPath = newPathArr;
+    window.location.hash = state.currentPath.map(p => encodeURIComponent(p)).join('/');
+    loadCurrentFolder();
+  }
+
+  function parseHashAndNavigate() {
+    const rawHash = window.location.hash.replace(/^#\/?/, '');
+    if (!rawHash) {
+      state.currentPath = [];
+    } else {
+      state.currentPath = rawHash.split('/').map(p => decodeURIComponent(p)).filter(Boolean);
+    }
+  }
+
+  function navigateToFolder(folderName) {
+    setPath([...state.currentPath, folderName]);
+  }
+
+  function navigateToBreadcrumb(index) {
+    if (index === -1) {
+      setPath([]);
+    } else {
+      setPath(state.currentPath.slice(0, index + 1));
+    }
   }
 
   function showLoading(isLoading) {
@@ -1643,21 +1107,18 @@
     }
   }
 
-  /* Utility Helpers */
-  function navigateToFolder(folderName) {
-    setPath([...state.currentPath, folderName]);
-  }
-
-  function navigateToBreadcrumb(index) {
-    if (index === -1) {
-      setPath([]);
-    } else {
-      setPath(state.currentPath.slice(0, index + 1));
-    }
+  function showToast(message) {
+    const toast = document.createElement('div');
+    toast.className = 'toast-message';
+    toast.textContent = message;
+    toastContainer.appendChild(toast);
+    setTimeout(() => {
+      toast.remove();
+    }, 3000);
   }
 
   function getFileExtension(filename) {
-    const parts = filename.split('.');
+    const parts = (filename || '').split('.');
     return parts.length > 1 ? parts.pop().toLowerCase() : '';
   }
 
@@ -1671,206 +1132,24 @@
 
   function formatDate(dateObj) {
     if (!(dateObj instanceof Date) || isNaN(dateObj)) return 'Unknown';
-    return dateObj.toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
+    return dateObj.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   }
 
   function escapeHTML(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   }
 
   function escapeJS(str) {
-    return String(str).replace(/'/g, "\\'").replace(/"/g, '\\"');
-  }
-
-  function getFileSVGIcon(category, size = 24) {
-    switch (category) {
-      case 'pdf':
-        return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M10 12h4"></path><path d="M10 16h4"></path></svg>`;
-      case 'sheet':
-        return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>`;
-      case 'image':
-        return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
-      case 'video':
-        return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>`;
-      case 'archive':
-        return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>`;
-      default:
-        return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`;
-    }
-  }
-
-  /* Storage Dashboard Controller */
-  async function openStorageModal() {
-    const modal = document.getElementById('storage-modal');
-    if (!modal) return;
-
-    try {
-      const res = await fetch('/api/storage/summary');
-      if (res.ok) {
-        const data = await res.json();
-        document.getElementById('storage-percent-text').textContent = `${data.disk.used_percent}%`;
-        document.getElementById('storage-bar').style.width = `${data.disk.used_percent}%`;
-        document.getElementById('storage-used-text').textContent = `Used: ${formatFileSize(data.disk.used)}`;
-        document.getElementById('storage-total-text').textContent = `Total: ${formatFileSize(data.disk.total)}`;
-
-        document.getElementById('count-documents').textContent = data.counts.documents;
-        document.getElementById('count-videos').textContent = data.counts.videos;
-        document.getElementById('count-isos').textContent = data.counts.isos;
-        document.getElementById('count-images').textContent = data.counts.images;
-        document.getElementById('count-archives').textContent = data.counts.archives;
-        document.getElementById('count-folders').textContent = data.counts.total_folders;
-
-        const largestList = document.getElementById('storage-largest-files');
-        if (largestList && data.largest_files) {
-          largestList.innerHTML = data.largest_files.slice(0, 5).map(f => `
-            <li style="display:flex; justify-content:space-between; padding: 4px 0; border-bottom: 1px solid var(--border-medium);">
-              <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 380px;">📄 ${escapeHTML(f.name)}</span>
-              <strong style="color: var(--primary-color);">${formatFileSize(f.size)}</strong>
-            </li>
-          `).join('');
-        }
-      }
-    } catch (e) {
-      console.error('Storage info fetch failed:', e);
-    }
-    modal.classList.remove('hidden');
-  }
-
-  /* Trash / Recycle Bin Controller */
-  async function openTrashModal() {
-    const modal = document.getElementById('trash-modal');
-    if (!modal) return;
-    loadTrashList();
-    modal.classList.remove('hidden');
-  }
-
-  async function loadTrashList() {
-    const tbody = document.getElementById('trash-tbody');
-    if (!tbody) return;
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1rem;">Loading trash list...</td></tr>`;
-
-    try {
-      const res = await fetch('/api/trash', { credentials: 'include' });
-      if (res.ok) {
-        const list = await res.json();
-        if (!list || list.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1rem; color: var(--text-muted);">Trash is empty.</td></tr>`;
-          return;
-        }
-        tbody.innerHTML = list.map(item => `
-          <tr style="border-bottom: 1px solid var(--border-medium);">
-            <td style="padding: 0.5rem;"><strong>${escapeHTML(item.name)}</strong></td>
-            <td style="padding: 0.5rem;"><code style="font-size:0.75rem;">/${escapeHTML(item.original_path)}</code></td>
-            <td style="padding: 0.5rem;">${formatDate(new Date(item.deleted_at * 1000))}</td>
-            <td style="padding: 0.5rem; text-align: right;">
-              <button class="btn-secondary" style="font-size:0.75rem; padding: 3px 8px;" onclick="window.DocPortal.restoreTrashItem('${item.id}')">↩ Restore</button>
-              <button class="btn-secondary" style="font-size:0.75rem; padding: 3px 8px; color: var(--danger);" onclick="window.DocPortal.deleteTrashItem('${item.id}')">🗑️ Delete</button>
-            </td>
-          </tr>
-        `).join('');
-      } else {
-        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1rem; color: var(--danger);">Please log in as admin to view trash.</td></tr>`;
-      }
-    } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1rem; color: var(--danger);">Failed loading trash.</td></tr>`;
-    }
-  }
-
-  async function restoreTrashItem(trashId) {
-    try {
-      const res = await fetch(`/api/trash/restore/${trashId}`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': state.csrfToken || '' }
-      });
-      if (res.ok) {
-        showToast('✓ Item restored successfully');
-        loadTrashList();
-        loadCurrentFolder();
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(err.detail || 'Could not restore item.');
-      }
-    } catch (e) {
-      alert('Error restoring item.');
-    }
-  }
-
-  async function deleteTrashItem(trashId) {
-    try {
-      const res = await fetch(`/api/trash/permanent/${trashId}`, {
-        method: 'DELETE',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': state.csrfToken || '' }
-      });
-      if (res.ok) {
-        showToast('✓ Item permanently deleted');
-        loadTrashList();
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(err.detail || 'Could not delete item.');
-      }
-    } catch (e) {
-      alert('Error deleting item.');
-    }
-  }
-
-  /* Metadata Inspection Controller */
-  async function openMetadataModal(relPath) {
-    const modal = document.getElementById('metadata-modal');
-    if (!modal) return;
-
-    document.getElementById('meta-filename').textContent = 'Loading...';
-    document.getElementById('meta-size').textContent = '-';
-    document.getElementById('meta-mtime').textContent = '-';
-    document.getElementById('meta-path').textContent = relPath;
-    document.getElementById('meta-sha256').textContent = 'Computing...';
-
-    modal.classList.remove('hidden');
-
-    const cleanPath = (relPath || '').replace(/^\/+/, '');
-    const encodedPath = encodeURIComponent(cleanPath).replace(/%2F/g, '/');
-
-    try {
-      const res = await fetch(`/api/documents/metadata/${encodedPath}`);
-      if (res.ok) {
-        const data = await res.json();
-        document.getElementById('meta-filename').textContent = data.name;
-        document.getElementById('meta-size').textContent = formatFileSize(data.size);
-        document.getElementById('meta-mtime').textContent = formatDate(new Date(data.mtime * 1000));
-        document.getElementById('meta-path').textContent = `/documents/${data.path}`;
-        document.getElementById('meta-sha256').textContent = data.sha256;
-      } else {
-        document.getElementById('meta-sha256').textContent = 'Failed loading metadata';
-      }
-    } catch (e) {
-      document.getElementById('meta-sha256').textContent = 'Error loading metadata';
-    }
+    return String(str || '').replace(/'/g, "\\'").replace(/"/g, '\\"');
   }
 
   // Export public helpers
   window.DocPortal = {
-    openViewer,
     navigateToFolder,
     navigateToBreadcrumb,
-    removeQueueItem,
+    selectFileItem,
     cancelUpload,
-    retryUpload,
-    clearCompletedQueue,
-    openDeleteModal,
     handleDeleteClick,
-    openStorageModal,
-    openTrashModal,
-    openMetadataModal,
     restoreTrashItem,
     deleteTrashItem
   };
