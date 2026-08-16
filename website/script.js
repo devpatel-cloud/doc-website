@@ -394,10 +394,15 @@
                 <span>${formatDate(item.mtime)}</span>
               </div>
             </div>
+            <div style="display: flex; gap: 0.375rem; margin-top: 0.5rem;" onclick="event.stopPropagation();">
+              <button class="btn-secondary" style="font-size: 0.75rem; padding: 2px 6px; flex: 1; justify-content: center;" onclick="window.DocPortal.navigateToFolder('${escapeJS(item.name)}')">Open</button>
+              <button class="btn-secondary" style="font-size: 0.75rem; padding: 2px 6px; color: var(--danger); justify-content: center;" title="Move to Trash" onclick="window.DocPortal.handleDeleteClick('${escapeJS(item.name)}', '${escapeJS(relPath)}')">🗑️</button>
+            </div>
           </div>
         `;
       } else {
         const extInfo = extensionMap[item.ext] || { icon: '📄' };
+        const mtimeTs = item.mtime instanceof Date ? item.mtime.getTime() : 0;
         return `
           <div class="doc-card" onclick="window.DocPortal.selectFileItem('${escapeJS(item.name)}', '${escapeJS(relPath)}')">
             <div class="doc-card-top">
@@ -409,6 +414,11 @@
               <div class="doc-card-meta">
                 <span>${formatDate(item.mtime)}</span>
               </div>
+            </div>
+            <div style="display: flex; gap: 0.25rem; margin-top: 0.5rem;" onclick="event.stopPropagation();">
+              <button class="btn-secondary" style="font-size: 0.75rem; padding: 2px 6px; flex: 1; justify-content: center;" onclick="window.DocPortal.openPreviewModal('${escapeJS(item.name)}', '${escapeJS(relPath)}', ${item.size}, ${mtimeTs})">👁️ Preview</button>
+              <a href="${item.url}" download class="btn-secondary" style="font-size: 0.75rem; padding: 2px 6px; justify-content: center;" title="Download File">⬇️</a>
+              <button class="btn-secondary" style="font-size: 0.75rem; padding: 2px 6px; color: var(--danger); justify-content: center;" title="Move to Trash" onclick="window.DocPortal.handleDeleteClick('${escapeJS(item.name)}', '${escapeJS(relPath)}')">🗑️</button>
             </div>
           </div>
         `;
@@ -427,19 +437,25 @@
             <td><span style="color: var(--text-muted); font-size: 0.75rem;">Folder</span></td>
             <td>-</td>
             <td>${formatDate(item.mtime)}</td>
-            <td style="text-align: right;"><button class="btn-secondary" style="font-size: 0.75rem; padding: 2px 8px;">Open</button></td>
+            <td style="text-align: right;" onclick="event.stopPropagation();">
+              <button class="btn-secondary" style="font-size: 0.75rem; padding: 2px 8px;" onclick="window.DocPortal.navigateToFolder('${escapeJS(item.name)}')">Open</button>
+              <button class="btn-secondary" style="font-size: 0.75rem; padding: 2px 8px; color: var(--danger);" onclick="window.DocPortal.handleDeleteClick('${escapeJS(item.name)}', '${escapeJS(relPath)}')">🗑️ Trash</button>
+            </td>
           </tr>
         `;
       } else {
         const extInfo = extensionMap[item.ext] || { icon: '📄' };
+        const mtimeTs = item.mtime instanceof Date ? item.mtime.getTime() : 0;
         return `
           <tr onclick="window.DocPortal.selectFileItem('${escapeJS(item.name)}', '${escapeJS(relPath)}')">
             <td><strong>${extInfo.icon} ${escapeHTML(item.name)}</strong></td>
             <td><span style="color: var(--text-muted); font-size: 0.75rem;">${item.ext.toUpperCase()}</span></td>
             <td>${formatFileSize(item.size)}</td>
             <td>${formatDate(item.mtime)}</td>
-            <td style="text-align: right;">
-              <a href="${item.url}" download class="btn-secondary" style="font-size: 0.75rem; padding: 2px 8px;" onclick="event.stopPropagation();">Download</a>
+            <td style="text-align: right;" onclick="event.stopPropagation();">
+              <button class="btn-secondary" style="font-size: 0.75rem; padding: 2px 8px;" onclick="window.DocPortal.openPreviewModal('${escapeJS(item.name)}', '${escapeJS(relPath)}', ${item.size}, ${mtimeTs})">👁️ Preview</button>
+              <a href="${item.url}" download class="btn-secondary" style="font-size: 0.75rem; padding: 2px 8px;">⬇️ Download</a>
+              <button class="btn-secondary" style="font-size: 0.75rem; padding: 2px 8px; color: var(--danger);" onclick="window.DocPortal.handleDeleteClick('${escapeJS(item.name)}', '${escapeJS(relPath)}')">🗑️ Trash</button>
             </td>
           </tr>
         `;
@@ -468,33 +484,45 @@
     const ext = getFileExtension(filename);
     const extInfo = extensionMap[ext] || { icon: '📄' };
 
-    inspectorIcon.textContent = extInfo.icon;
-    inspectorFilename.textContent = filename;
-    inspectorSize.textContent = 'Loading...';
-    inspectorMtime.textContent = '-';
-    inspectorPath.textContent = `/documents/${cleanPath}`;
-    inspectorSha256.textContent = 'Computing SHA-256...';
-    btnInspectorDownload.href = `/documents/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}`;
+    if (inspectorIcon) inspectorIcon.textContent = extInfo.icon;
+    if (inspectorFilename) inspectorFilename.textContent = filename;
+    if (inspectorSize) inspectorSize.textContent = 'Loading...';
+    if (inspectorMtime) inspectorMtime.textContent = '-';
+    if (inspectorPath) inspectorPath.textContent = `/documents/${cleanPath}`;
+    if (inspectorSha256) inspectorSha256.textContent = 'Calculating checksum...';
+    if (btnCopyInspectorSha256) btnCopyInspectorSha256.disabled = true;
 
-    inspectorPanel.classList.remove('hidden');
+    if (btnInspectorDownload) {
+      btnInspectorDownload.href = `/documents/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}`;
+      btnInspectorDownload.download = filename;
+    }
+
+    if (btnInspectorDelete) {
+      btnInspectorDelete.onclick = () => handleDeleteClick(filename, cleanPath);
+    }
+
+    if (inspectorPanel) inspectorPanel.classList.remove('hidden');
 
     try {
       const encodedPath = encodeURIComponent(cleanPath).replace(/%2F/g, '/');
       const res = await fetch(`/api/documents/metadata/${encodedPath}`);
       if (res.ok) {
         const data = await res.json();
-        inspectorSize.textContent = formatFileSize(data.size);
-        inspectorMtime.textContent = formatDate(new Date(data.mtime * 1000));
-        inspectorSha256.textContent = data.sha256;
-
-        btnInspectorDelete.onclick = () => {
-          handleDeleteClick(filename, cleanPath);
-        };
+        if (inspectorSize) inspectorSize.textContent = formatFileSize(data.size);
+        if (inspectorMtime) inspectorMtime.textContent = formatDate(new Date(data.mtime * 1000));
+        if (inspectorSha256) inspectorSha256.textContent = data.sha256 || 'Unavailable';
+        if (btnCopyInspectorSha256) btnCopyInspectorSha256.disabled = !data.sha256;
       } else {
-        inspectorSha256.textContent = 'Metadata unavailable';
+        if (inspectorSize) inspectorSize.textContent = 'Unavailable';
+        if (inspectorMtime) inspectorMtime.textContent = '-';
+        if (inspectorSha256) inspectorSha256.textContent = 'Metadata unavailable';
+        if (btnCopyInspectorSha256) btnCopyInspectorSha256.disabled = true;
       }
     } catch (e) {
-      inspectorSha256.textContent = 'Error computing checksum';
+      if (inspectorSize) inspectorSize.textContent = 'Unavailable';
+      if (inspectorMtime) inspectorMtime.textContent = '-';
+      if (inspectorSha256) inspectorSha256.textContent = 'Metadata fetch error';
+      if (btnCopyInspectorSha256) btnCopyInspectorSha256.disabled = true;
     }
   }
 
@@ -509,10 +537,11 @@
   function handleFileSelect(files) {
     if (!files || files.length === 0) return;
     
+    const now = Date.now();
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const item = {
-        id: `upload_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        id: `upload_${now}_${Math.random().toString(36).substr(2, 6)}`,
         file: file,
         folderPath: state.currentPath.join('/'),
         status: 'queued',
@@ -523,12 +552,51 @@
         speedMbps: '0.0',
         etaSec: 0,
         activeWorkers: INITIAL_CONCURRENCY,
-        errorMsg: ''
+        errorMsg: '',
+        createdTime: now,
+        hovered: false,
+        userExpanded: false,
+        leaveTimeout: null
       };
       state.uploadQueue.push(item);
     }
     renderUploadQueueWidget();
     processUploadQueue();
+  }
+
+  function handleCardHover(itemId, isHovered) {
+    const item = state.uploadQueue.find(i => i.id === itemId);
+    if (!item) return;
+
+    if (isHovered) {
+      if (item.leaveTimeout) clearTimeout(item.leaveTimeout);
+      item.hovered = true;
+      renderUploadQueueWidget();
+    } else {
+      item.leaveTimeout = setTimeout(() => {
+        item.hovered = false;
+        renderUploadQueueWidget();
+      }, 1500);
+    }
+  }
+
+  function toggleCardExpand(itemId) {
+    const item = state.uploadQueue.find(i => i.id === itemId);
+    if (!item) return;
+    item.userExpanded = !item.userExpanded;
+    renderUploadQueueWidget();
+  }
+
+  function retryUpload(itemId) {
+    const item = state.uploadQueue.find(i => i.id === itemId);
+    if (item && (item.status === 'failed' || item.status === 'cancelled')) {
+      item.status = 'queued';
+      item.errorMsg = '';
+      item.progressPct = 0;
+      item.userExpanded = true;
+      renderUploadQueueWidget();
+      processUploadQueue();
+    }
   }
 
   function renderUploadQueueWidget() {
@@ -538,9 +606,18 @@
     }
 
     floatingUploader.classList.remove('hidden');
+    const now = Date.now();
+
     uploaderWidgetBody.innerHTML = state.uploadQueue.map(item => {
       const ext = getFileExtension(item.file.name);
       const extInfo = extensionMap[ext] || { icon: '📄' };
+
+      // Compact state logic
+      const isCompact = (
+        item.status === 'completed' ||
+        item.status === 'paused' ||
+        (item.status === 'uploading' && (now - item.createdTime > 6000))
+      ) && !item.hovered && !item.userExpanded && item.status !== 'failed';
 
       let metaText = `${item.uploadedMB} / ${item.totalMB} MB`;
       if (item.status === 'uploading') {
@@ -549,20 +626,45 @@
         metaText += ` • ${item.speedMBs} MB/s${mbpsText} • ${item.etaSec}s left${workersText}`;
       } else if (item.status === 'completed') {
         metaText = `${item.totalMB} MB • Uploaded cleanly`;
+      } else if (item.status === 'failed') {
+        metaText = `Upload failed: ${item.errorMsg || 'Network error'}`;
       }
 
       return `
-        <div class="upload-card-item">
-          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8125rem;">
-            <span style="font-weight: 600; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 220px;">${extInfo.icon} ${escapeHTML(item.file.name)}</span>
-            <span style="font-size: 0.75rem; color: var(--primary-light); font-weight: 700;">${item.progressPct}%</span>
+        <div class="upload-card-item ${isCompact ? 'compact' : ''}"
+             onmouseenter="window.DocPortal.handleCardHover('${item.id}', true)"
+             onmouseleave="window.DocPortal.handleCardHover('${item.id}', false)"
+             onclick="window.DocPortal.toggleCardExpand('${item.id}')">
+          
+          <!-- Compact Single-Line Mode -->
+          <div class="upload-compact-row">
+            <div style="display: flex; align-items: center; gap: 0.5rem; overflow: hidden; flex: 1;">
+              <span>${extInfo.icon}</span>
+              <span style="font-weight: 600; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${escapeHTML(item.file.name)}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
+              <span style="font-weight: 700; color: var(--primary-light);">${item.progressPct}%</span>
+              <span style="color: var(--text-muted); font-size: 0.6875rem;">${item.speedMBs || '0.0'} MB/s</span>
+              <button class="btn-icon" style="padding: 0; font-size: 0.75rem;" onclick="event.stopPropagation(); window.DocPortal.cancelUpload('${item.id}')">✕</button>
+            </div>
           </div>
-          <div class="upload-progress-bar-bg">
-            <div class="upload-progress-bar-fill" style="width: ${item.progressPct}%;"></div>
-          </div>
-          <div style="font-size: 0.6875rem; color: var(--text-muted); display: flex; justify-content: space-between;">
-            <span>${metaText}</span>
-            <button class="btn-icon" style="padding: 0; font-size: 0.75rem;" onclick="window.DocPortal.cancelUpload('${item.id}')">✕</button>
+
+          <!-- Full Expanded Details Mode -->
+          <div class="upload-expanded-body">
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8125rem; margin-bottom: 0.25rem;">
+              <span style="font-weight: 600; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 220px;">${extInfo.icon} ${escapeHTML(item.file.name)}</span>
+              <span style="font-size: 0.75rem; color: ${item.status === 'failed' ? 'var(--danger)' : 'var(--primary-light)'}; font-weight: 700;">${item.status === 'failed' ? 'FAILED' : item.progressPct + '%'}</span>
+            </div>
+            <div class="upload-progress-bar-bg" style="margin-bottom: 0.375rem;">
+              <div class="upload-progress-bar-fill" style="width: ${item.progressPct}%; background: ${item.status === 'failed' ? 'var(--danger)' : 'var(--primary-gradient)'};"></div>
+            </div>
+            <div style="font-size: 0.6875rem; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center;">
+              <span>${metaText}</span>
+              <div style="display: flex; gap: 0.375rem; align-items: center;">
+                ${item.status === 'failed' ? `<button class="btn-secondary" style="font-size: 0.6875rem; padding: 2px 6px;" onclick="event.stopPropagation(); window.DocPortal.retryUpload('${item.id}')">Retry</button>` : ''}
+                <button class="btn-icon" style="padding: 0; font-size: 0.75rem;" onclick="event.stopPropagation(); window.DocPortal.cancelUpload('${item.id}')">✕</button>
+              </div>
+            </div>
           </div>
         </div>
       `;
@@ -853,28 +955,131 @@
   }
 
   /**
+   * Media & Document Preview Modal Controller
+   */
+  const previewModal = document.getElementById('preview-modal');
+  const btnClosePreviewModal = document.getElementById('btn-close-preview-modal');
+  const previewModalIcon = document.getElementById('preview-modal-icon');
+  const previewModalTitle = document.getElementById('preview-modal-title');
+  const previewModalDownload = document.getElementById('preview-modal-download');
+  const previewModalBody = document.getElementById('preview-modal-body');
+
+  function openPreviewModal(filename, relPath, size, mtimeTs) {
+    const cleanPath = (relPath || '').replace(/^\/+/, '');
+    const encodedPath = encodeURIComponent(cleanPath).replace(/%2F/g, '/');
+    const fileUrl = `/documents/${encodedPath}`;
+    const ext = getFileExtension(filename);
+    const extInfo = extensionMap[ext] || { icon: '📄' };
+
+    if (previewModalIcon) previewModalIcon.textContent = extInfo.icon;
+    if (previewModalTitle) previewModalTitle.textContent = filename;
+    if (previewModalDownload) {
+      previewModalDownload.href = fileUrl;
+      previewModalDownload.download = filename;
+    }
+
+    if (previewModalBody) {
+      previewModalBody.innerHTML = `<div style="color: var(--text-muted); font-size: 0.875rem; text-align: center; padding: 2rem;">Loading preview...</div>`;
+    }
+    if (previewModal) previewModal.classList.remove('hidden');
+
+    if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(ext)) {
+      previewModalBody.innerHTML = `<img src="${fileUrl}" alt="${escapeHTML(filename)}" style="max-width: 100%; max-height: 75vh; border-radius: var(--radius-md); object-fit: contain; box-shadow: var(--shadow-md);">`;
+    } else if (['mp4', 'webm', 'mkv', 'mov', 'avi', 'm4v', '3gp', 'mpeg', 'mpg', 'ts'].includes(ext)) {
+      previewModalBody.innerHTML = `
+        <video controls autoplay playsinline style="width: 100%; max-height: 75vh; border-radius: var(--radius-md); background: #000;">
+          <source src="${fileUrl}">
+          Your browser does not support HTML5 video playback.
+        </video>
+      `;
+    } else if (ext === 'pdf') {
+      previewModalBody.innerHTML = `<iframe src="${fileUrl}" style="width: 100%; height: 75vh; border: none; border-radius: var(--radius-md);"></iframe>`;
+    } else if (['txt', 'md', 'log', 'json', 'csv', 'py', 'js', 'html', 'css', 'xml', 'sh'].includes(ext)) {
+      fetch(fileUrl)
+        .then(r => {
+          if (!r.ok) throw new Error('File not accessible');
+          return r.text();
+        })
+        .then(txt => {
+          previewModalBody.innerHTML = `<pre style="white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); font-size: 0.8125rem; width: 100%; max-height: 70vh; overflow-y: auto; background: var(--bg-card); padding: 1.25rem; border-radius: var(--radius-md); color: var(--text-main); text-align: left;">${escapeHTML(txt.slice(0, 100000))}</pre>`;
+        })
+        .catch(() => {
+          previewModalBody.innerHTML = `<div style="color: var(--danger); text-align: center; padding: 2rem;">Failed loading text preview.</div>`;
+        });
+    } else {
+      // Unsupported / Binary / Office Docs / ISO / ZIP
+      const mdateStr = mtimeTs ? formatDate(new Date(mtimeTs)) : '-';
+      previewModalBody.innerHTML = `
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 1rem; text-align: center; padding: 2rem 1rem; width: 100%;">
+          <div style="font-size: 3.5rem;">${extInfo.icon}</div>
+          <div style="font-weight: 700; font-size: 1.125rem;">${escapeHTML(filename)}</div>
+          <div style="font-size: 0.875rem; color: var(--text-muted);">
+            Type: <strong>${ext.toUpperCase() || 'Binary File'}</strong> • Size: <strong>${formatFileSize(size || 0)}</strong> • Modified: <strong>${mdateStr}</strong>
+          </div>
+          <div style="font-size: 0.75rem; color: var(--text-subtle); max-width: 450px;">Direct inline browser preview is not supported for this document format. You can inspect metadata in the right panel or download the file directly.</div>
+          <a href="${fileUrl}" download class="btn-primary" style="padding: 0.625rem 1.25rem; margin-top: 0.5rem; text-decoration: none;">⬇️ Download File</a>
+        </div>
+      `;
+    }
+  }
+
+  if (btnClosePreviewModal) {
+    btnClosePreviewModal.addEventListener('click', () => previewModal.classList.add('hidden'));
+  }
+
+  /**
    * Delete & Trash Operations
    */
   async function handleDeleteClick(filename, cleanPath) {
     if (!confirm(`Are you sure you want to move '${filename}' to Trash?`)) return;
 
+    const encodedPath = encodeURIComponent(cleanPath).replace(/%2F/g, '/');
+
     try {
-      const res = await fetch(`/api/documents/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}`, {
+      const res = await fetch(`/api/documents/${encodedPath}`, {
         method: 'DELETE',
+        credentials: 'include',
         headers: { 'X-CSRF-Token': state.csrfToken || '' }
       });
 
       if (res.ok) {
         showToast(`✓ '${filename}' moved to Trash`);
-        inspectorPanel.classList.add('hidden');
+        if (inspectorPanel) inspectorPanel.classList.add('hidden');
         if (state.activeView === 'files') loadCurrentFolder();
-        if (state.activeView === 'trash') loadTrashList();
+        loadTrashList();
+        loadDashboardMetrics();
+      } else if (res.status === 409) {
+        const data = await res.json().catch(() => ({}));
+        if (data.status === 'requires_confirmation') {
+          if (confirm(`Folder '${filename}' contains ${data.itemCount || 'multiple'} item(s). Are you sure you want to move the entire folder and all its contents to Trash?`)) {
+            const retryRes = await fetch(`/api/documents/${encodedPath}?confirm=true`, {
+              method: 'DELETE',
+              credentials: 'include',
+              headers: { 'X-CSRF-Token': state.csrfToken || '' }
+            });
+            if (retryRes.ok) {
+              showToast(`✓ Folder '${filename}' moved to Trash`);
+              if (inspectorPanel) inspectorPanel.classList.add('hidden');
+              if (state.activeView === 'files') loadCurrentFolder();
+              loadTrashList();
+              loadDashboardMetrics();
+            } else {
+              const retryErr = await retryRes.json().catch(() => ({}));
+              showToast(`✕ ${retryErr.detail || 'Failed moving folder to Trash'}`);
+            }
+          }
+        } else {
+          alert(data.detail || 'Move to Trash conflict.');
+        }
+      } else if (res.status === 401) {
+        alert('Admin authentication required. Please click "Admin Login" in top header.');
+        if (authModal) authModal.classList.remove('hidden');
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(err.detail || 'Failed to move to Trash.');
+        showToast(`✕ ${err.detail || 'Failed to move item to Trash'}`);
       }
     } catch (e) {
-      alert('Delete operation failed.');
+      showToast('✕ Delete network error');
     }
   }
 
@@ -884,7 +1089,7 @@
     tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1.5rem;">Loading trash contents...</td></tr>`;
 
     try {
-      const res = await fetch('/api/trash');
+      const res = await fetch('/api/trash', { credentials: 'include' });
       if (res.ok) {
         const list = await res.json();
         if (!list || list.length === 0) {
@@ -893,17 +1098,19 @@
         }
         tbody.innerHTML = list.map(item => `
           <tr>
-            <td><strong>${escapeHTML(item.name)}</strong></td>
+            <td><strong>${escapeHTML(item.name || item.filename)}</strong></td>
             <td><code style="font-size: 0.75rem; color: var(--text-muted);">/${escapeHTML(item.original_path)}</code></td>
-            <td>${formatDate(new Date(item.deleted_at * 1000))}</td>
+            <td>${formatDate(new Date((item.deleted_at || 0) * 1000))}</td>
             <td style="text-align: right;">
               <button class="btn-secondary" style="font-size:0.75rem; padding: 3px 8px;" onclick="window.DocPortal.restoreTrashItem('${item.id}')">↩ Restore</button>
               <button class="btn-secondary" style="font-size:0.75rem; padding: 3px 8px; color: var(--danger);" onclick="window.DocPortal.deleteTrashItem('${item.id}')">🗑️ Permanent Delete</button>
             </td>
           </tr>
         `).join('');
+      } else if (res.status === 401) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1.5rem; color: var(--warning);">Admin sign in required to view Trash.</td></tr>`;
       } else {
-        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1.5rem; color: var(--danger);">Admin sign in required to view trash.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1.5rem; color: var(--danger);">Failed loading trash contents.</td></tr>`;
       }
     } catch (e) {
       tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1.5rem; color: var(--danger);">Failed loading trash.</td></tr>`;
@@ -914,11 +1121,14 @@
     try {
       const res = await fetch(`/api/trash/restore/${trashId}`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'X-CSRF-Token': state.csrfToken || '' }
       });
       if (res.ok) {
         showToast('✓ Item restored successfully');
         loadTrashList();
+        loadCurrentFolder();
+        loadDashboardMetrics();
       } else {
         const err = await res.json().catch(() => ({}));
         alert(err.detail || 'Could not restore item.');
@@ -929,15 +1139,17 @@
   }
 
   async function deleteTrashItem(trashId) {
-    if (!confirm('Permanently delete this item? This action cannot be undone.')) return;
+    if (!confirm('Permanently delete this item from Trash? This action cannot be undone.')) return;
     try {
       const res = await fetch(`/api/trash/permanent/${trashId}`, {
         method: 'DELETE',
+        credentials: 'include',
         headers: { 'X-CSRF-Token': state.csrfToken || '' }
       });
       if (res.ok) {
         showToast('✓ Permanently deleted item');
         loadTrashList();
+        loadDashboardMetrics();
       } else {
         const err = await res.json().catch(() => ({}));
         alert(err.detail || 'Could not delete item.');
@@ -1246,7 +1458,11 @@
     navigateToFolder,
     navigateToBreadcrumb,
     selectFileItem,
+    openPreviewModal,
     cancelUpload,
+    handleCardHover,
+    toggleCardExpand,
+    retryUpload,
     handleDeleteClick,
     restoreTrashItem,
     deleteTrashItem

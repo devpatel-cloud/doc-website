@@ -322,33 +322,35 @@
         <button id="btn-close-inspector" class="btn-icon">✕</button>
       </div>
 
-      <div class="inspector-preview-box">
-        <div id="inspector-icon" style="font-size: 2.5rem;">📄</div>
-        <span id="inspector-filename" class="inspector-file-title">select_a_file.pdf</span>
+      <div class="inspector-body">
+        <div class="inspector-preview-box">
+          <div id="inspector-icon" style="font-size: 2.5rem;">📄</div>
+          <span id="inspector-filename" class="inspector-file-title">select_a_file.pdf</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+          <div class="inspector-detail-row">
+            <span class="inspector-detail-label">File Size</span>
+            <span id="inspector-size" class="inspector-detail-value">-</span>
+          </div>
+          <div class="inspector-detail-row">
+            <span class="inspector-detail-label">Modified Date</span>
+            <span id="inspector-mtime" class="inspector-detail-value">-</span>
+          </div>
+          <div class="inspector-detail-row">
+            <span class="inspector-detail-label">Folder Location</span>
+            <div id="inspector-path" class="inspector-path-box">/documents</div>
+          </div>
+          <div class="inspector-detail-row">
+            <span class="inspector-detail-label">SHA-256 Checksum</span>
+            <div class="hash-code-box" id="inspector-sha256">Calculating checksum...</div>
+          </div>
+        </div>
       </div>
 
-      <div style="display: flex; flex-direction: column; gap: 1rem;">
-        <div class="inspector-detail-row">
-          <span class="inspector-detail-label">File Size</span>
-          <span id="inspector-size" class="inspector-detail-value">-</span>
-        </div>
-        <div class="inspector-detail-row">
-          <span class="inspector-detail-label">Modified Date</span>
-          <span id="inspector-mtime" class="inspector-detail-value">-</span>
-        </div>
-        <div class="inspector-detail-row">
-          <span class="inspector-detail-label">Folder Location</span>
-          <code id="inspector-path" style="background: var(--bg-card); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;">/documents</code>
-        </div>
-        <div class="inspector-detail-row">
-          <span class="inspector-detail-label">SHA-256 Checksum</span>
-          <div class="hash-code-box" id="inspector-sha256">Computing...</div>
-          <button id="btn-copy-inspector-sha256" class="btn-secondary" style="font-size: 0.75rem; justify-content: center; margin-top: 4px;">📋 Copy Checksum</button>
-        </div>
-      </div>
-
-      <div style="margin-top: auto; display: flex; flex-direction: column; gap: 0.5rem;">
-        <a id="btn-inspector-download" href="#" download class="btn-primary" style="justify-content: center;">Download File</a>
+      <div class="inspector-footer">
+        <button id="btn-copy-inspector-sha256" class="btn-secondary" style="font-size: 0.8125rem; justify-content: center;">📋 Copy Checksum</button>
+        <a id="btn-inspector-download" href="#" download class="btn-primary" style="justify-content: center;">⬇️ Download File</a>
         <button id="btn-inspector-delete" class="btn-secondary" style="justify-content: center; color: var(--danger);">🗑️ Move to Trash</button>
       </div>
     </aside>
@@ -365,6 +367,25 @@
     </div>
     <div id="uploader-widget-body" class="uploader-widget-body">
       <!-- Rendered dynamically -->
+    </div>
+  </div>
+
+  <!-- Polished Media & File Preview Lightbox Modal -->
+  <div id="preview-modal" class="modal-backdrop hidden">
+    <div class="command-palette-container" style="max-width: 900px; width: 92vw; padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem; max-height: 90vh;">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 0.75rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem; overflow: hidden; max-width: 70%;">
+          <span id="preview-modal-icon" style="font-size: 1.25rem;">📄</span>
+          <span id="preview-modal-title" style="font-weight: 700; font-size: 1rem; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">Preview</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <a id="preview-modal-download" href="#" download class="btn-primary" style="font-size: 0.75rem; padding: 0.375rem 0.75rem;">⬇️ Download</a>
+          <button id="btn-close-preview-modal" class="btn-icon">✕</button>
+        </div>
+      </div>
+      <div id="preview-modal-body" style="flex: 1; overflow-y: auto; display: flex; align-items: center; justify-content: center; min-height: 300px; background: var(--bg-surface); border-radius: var(--radius-md); padding: 0.5rem;">
+        <!-- Rendered dynamically -->
+      </div>
     </div>
   </div>
 

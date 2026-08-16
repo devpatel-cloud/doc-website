@@ -254,8 +254,10 @@ def load_trash_index() -> list:
 def save_trash_index(index_data: list):
     try:
         os.makedirs(DOCUMENTS_DIR, mode=0o775, exist_ok=True)
-        with open(TRASH_INDEX_FILE, "w", encoding="utf-8") as f:
+        tmp_file = f"{TRASH_INDEX_FILE}.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as f:
             json.dump(index_data, f, indent=2)
+        os.replace(tmp_file, TRASH_INDEX_FILE)
     except Exception as e:
         logger.error(f"Failed saving trash index: {e}")
 
@@ -800,15 +802,18 @@ async def delete_item(
 
     shutil.move(target_path, trash_dest_path)
 
+    now_ts = time.time()
     trash_entry = {
         "id": trash_id,
         "name": base_name,
+        "filename": base_name,
         "original_path": clean_path,
         "trash_name": trash_filename,
         "size": item_size,
         "is_folder": is_dir,
-        "deleted_at": time.time(),
-        "deleted_date": datetime.now(timezone.utc).isoformat()
+        "deleted_at": now_ts,
+        "deleted_date": datetime.now(timezone.utc).isoformat(),
+        "expires_at": now_ts + (TRASH_RETENTION_DAYS * 86400)
     }
 
     index_data = load_trash_index()
@@ -1087,10 +1092,13 @@ async def search_files(q: str = "", ext: Optional[str] = None):
 
     return results
 
+import urllib.parse
+
 @app.get("/api/documents/metadata/{item_path:path}")
 async def get_file_metadata(item_path: str):
     """Return safe metadata and SHA-256 checksum for document"""
-    clean_path = item_path.strip().strip("/").strip("\\")
+    raw_path = urllib.parse.unquote(item_path)
+    clean_path = raw_path.strip().strip("/").strip("\\")
     target_path = os.path.realpath(os.path.join(DOCUMENTS_DIR, clean_path))
     validate_safe_path(target_path, allow_root=False)
 
