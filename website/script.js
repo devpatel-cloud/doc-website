@@ -1267,12 +1267,26 @@
       url += '?confirm=true';
     }
 
+    console.log('[DocVault Delete Request]', {
+      name,
+      cleanPath,
+      url,
+      method: 'DELETE',
+      csrfToken: state.csrfToken ? 'PRESENT' : 'MISSING'
+    });
+
     try {
       const res = await fetch(url, {
         method: 'DELETE',
+        credentials: 'include',
         headers: {
           'X-CSRF-Token': state.csrfToken || ''
         }
+      });
+
+      console.log('[DocVault Delete Response]', {
+        status: res.status,
+        statusText: res.statusText
       });
 
       if (res.ok) {
@@ -1281,16 +1295,29 @@
         loadCurrentFolder();
       } else {
         const errData = await res.json().catch(() => ({}));
-        let msg = 'Unable to delete this document right now. Please try again.';
-        if (res.status === 401) msg = 'Your admin session has expired. Please sign in again.';
-        else if (res.status === 403) msg = "You don't have permission to delete this document.";
-        else if (res.status === 404) msg = 'This document or folder no longer exists.';
-        else if (res.status === 400) msg = 'This deletion request is not allowed for security reasons.';
-        
-        errorBox.textContent = errData.detail || msg;
+        let msg = 'Server error. Please try again.';
+
+        if (res.status === 401) {
+          msg = 'Please log in as administrator.';
+        } else if (res.status === 403) {
+          msg = 'You do not have permission to delete this file.';
+        } else if (res.status === 404) {
+          msg = 'File no longer exists.';
+        } else if (res.status === 409) {
+          msg = 'Conflict: This folder contains items. Require explicit confirmation.';
+        } else if (res.status === 413) {
+          msg = 'File path or request payload is too large.';
+        } else if (res.status === 500) {
+          msg = 'Server error. Please try again.';
+        } else if (errData.detail) {
+          msg = errData.detail;
+        }
+
+        errorBox.textContent = msg;
         errorBox.classList.remove('hidden');
       }
     } catch (e) {
+      console.error('[DocVault Delete Exception]', e);
       errorBox.textContent = 'Network error. Could not complete deletion.';
       errorBox.classList.remove('hidden');
     } finally {
