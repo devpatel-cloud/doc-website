@@ -853,7 +853,9 @@
 
       let metaText = `${item.uploadedMB} / ${item.totalMB} MB`;
       if (item.status === 'uploading') {
-        metaText += ` • ${item.speedMBs} MB/s • ${item.etaSec}s left`;
+        const mbpsText = item.speedMbps ? ` (${item.speedMbps} Mbps)` : '';
+        const workersText = item.activeWorkers ? ` • ⚡ ${item.activeWorkers} parallel workers` : '';
+        metaText += ` • ${item.speedMBs} MB/s${mbpsText} • ${item.etaSec}s left${workersText}`;
       } else if (item.status === 'completed') {
         metaText = `${item.totalMB} MB • Uploaded cleanly`;
       }
@@ -907,11 +909,254 @@
     }
   }
 
-  function startSingleTaskUpload(item) {
+  /* Adaptive Parallel Chunk Upload Engine */
+  const DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB
+  const INITIAL_CONCURRENCY = 2;
+  const DEFAULT_CONCURRENCY = 4;
+  const MAX_CONCURRENCY_CAP = 6;
+
+  async function startSingleTaskUpload(item) {
     item.status = 'uploading';
     item.errorMsg = '';
+    item.activeWorkers = INITIAL_CONCURRENCY;
     renderUploadQueue();
 
+    if (item.file.size <= DEFAULT_CHUNK_SIZE) {
+      uploadFileSingleRequest(item);
+      return;
+    }
+
+    try {
+      const totalChunks = Math.ceil(item.file.size / DEFAULT_CHUNK_SIZE);
+
+      let uploadId = item.uploadId;
+      let alreadyUploaded = new Set();
+      let initConcurrency = DEFAULT_CONCURRENCY;
+      let maxConcurrency = MAX_CONCURRENCY_CAP;
+
+      if (!uploadId) {
+        const initRes = await fetch('/api/upload/init', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': state.csrfToken || ''
+          },
+          body: JSON.stringify({
+            filename: item.file.name,
+            folderPath: item.folderPath,
+            totalSize: item.file.size,
+            totalChunks: totalChunks,
+            replace: item.replace || false
+          })
+        });
+
+        if (initRes.status === 409) {
+          state.duplicateContext = { item };
+          duplicateMsgText.textContent = `File "${item.file.name}" already exists in ${item.folderPath || 'Documents Root'}. Do you want to replace it?`;
+          duplicateModal.classList.remove('hidden');
+          item.status = 'queued';
+          renderUploadQueue();
+          return;
+        }
+
+        if (!initRes.ok) {
+          const errData = await initRes.json().catch(() => ({}));
+          item.status = 'failed';
+          item.errorMsg = getFriendlyErrorMessage(initRes.status, errData.detail);
+          renderUploadQueue();
+          processUploadQueue();
+          return;
+        }
+
+        const initData = await initRes.json();
+        uploadId = initData.uploadId;
+        item.uploadId = uploadId;
+        if (initData.concurrency) initConcurrency = initData.concurrency;
+        if (initData.maxConcurrency) maxConcurrency = initData.maxConcurrency;
+        if (initData.uploadedChunks) alreadyUploaded = new Set(initData.uploadedChunks);
+      } else {
+        const statusRes = await fetch(`/api/upload/status/${uploadId}`, {
+          headers: { 'X-CSRF-Token': state.csrfToken || '' }
+        });
+        if (statusRes.ok) {
+          const sData = await statusRes.json();
+          if (sData.uploadedChunks) alreadyUploaded = new Set(sData.uploadedChunks);
+        }
+      }
+
+      const pendingQueue = [];
+      for (let i = 0; i < totalChunks; i++) {
+        if (!alreadyUploaded.has(i)) {
+          pendingQueue.push(i);
+        }
+      }
+
+      let uploadedBytes = Array.from(alreadyUploaded).reduce((acc, idx) => {
+        const start = idx * DEFAULT_CHUNK_SIZE;
+        const end = Math.min(start + DEFAULT_CHUNK_SIZE, item.file.size);
+        return acc + (end - start);
+      }, 0);
+
+      item.uploadedMB = (uploadedBytes / (1024 * 1024)).toFixed(1);
+      item.progressPct = Math.round((uploadedBytes / item.file.size) * 100);
+      renderUploadQueue();
+
+      if (pendingQueue.length === 0) {
+        await finalizeResumableUpload(item, uploadId);
+        return;
+      }
+
+      const startTime = Date.now();
+      let activeWorkerCount = INITIAL_CONCURRENCY;
+      let consecutiveSuccesses = 0;
+      let isAborted = false;
+      let activeControllers = [];
+
+      item.abortControllers = activeControllers;
+
+      const runWorker = async () => {
+        while (pendingQueue.length > 0 && !isAborted) {
+          if (item.status === 'paused' || item.status === 'cancelled') {
+            isAborted = true;
+            return;
+          }
+
+          const chunkIndex = pendingQueue.shift();
+          if (chunkIndex === undefined) break;
+
+          const start = chunkIndex * DEFAULT_CHUNK_SIZE;
+          const end = Math.min(start + DEFAULT_CHUNK_SIZE, item.file.size);
+          const chunkBlob = item.file.slice(start, end);
+          const chunkSize = end - start;
+
+          let success = false;
+          let attempt = 0;
+          const maxAttempts = 5;
+
+          while (!success && attempt < maxAttempts && !isAborted) {
+            if (item.status === 'paused' || item.status === 'cancelled') {
+              isAborted = true;
+              return;
+            }
+            attempt++;
+
+            try {
+              const controller = new AbortController();
+              activeControllers.push(controller);
+
+              const formData = new FormData();
+              formData.append('uploadId', uploadId);
+              formData.append('chunkIndex', chunkIndex);
+              formData.append('chunk', chunkBlob, item.file.name);
+
+              const chunkRes = await fetch('/api/upload/chunk', {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': state.csrfToken || '' },
+                signal: controller.signal,
+                body: formData
+              });
+
+              activeControllers = activeControllers.filter(c => c !== controller);
+
+              if (chunkRes.ok) {
+                success = true;
+                uploadedBytes += chunkSize;
+                consecutiveSuccesses++;
+
+                if (consecutiveSuccesses >= 3 && activeWorkerCount < maxConcurrency) {
+                  activeWorkerCount = Math.min(activeWorkerCount + 1, maxConcurrency);
+                  item.activeWorkers = activeWorkerCount;
+                  consecutiveSuccesses = 0;
+                }
+
+                item.progressPct = Math.round((uploadedBytes / item.file.size) * 100);
+                const elapsedSec = (Date.now() - startTime) / 1000;
+                const speedBps = elapsedSec > 0 ? (uploadedBytes / elapsedSec) : 0;
+                const speedMBsNum = (speedBps / (1024 * 1024));
+                item.speedMBs = speedMBsNum.toFixed(1);
+                item.speedMbps = (speedMBsNum * 8).toFixed(1);
+                
+                const remainingBytes = item.file.size - uploadedBytes;
+                item.etaSec = speedBps > 0 ? Math.ceil(remainingBytes / speedBps) : 0;
+                item.uploadedMB = (uploadedBytes / (1024 * 1024)).toFixed(1);
+
+                renderUploadQueue();
+              } else if (chunkRes.status === 429 || chunkRes.status >= 500) {
+                activeWorkerCount = Math.max(2, activeWorkerCount - 1);
+                item.activeWorkers = activeWorkerCount;
+                consecutiveSuccesses = 0;
+                await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 500));
+              } else {
+                await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 500));
+              }
+            } catch (e) {
+              if (e.name === 'AbortError') {
+                isAborted = true;
+                return;
+              }
+              activeWorkerCount = Math.max(2, activeWorkerCount - 1);
+              item.activeWorkers = activeWorkerCount;
+              consecutiveSuccesses = 0;
+              await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 500));
+            }
+          }
+
+          if (!success && !isAborted) {
+            pendingQueue.unshift(chunkIndex);
+            item.status = 'failed';
+            item.errorMsg = 'Network error uploading chunk. Click Try Again to resume.';
+            renderUploadQueue();
+            processUploadQueue();
+            return;
+          }
+        }
+      };
+
+      const workers = [];
+      for (let w = 0; w < initConcurrency; w++) {
+        workers.push(runWorker());
+      }
+      await Promise.all(workers);
+
+      if (item.status === 'uploading' && !isAborted) {
+        await finalizeResumableUpload(item, uploadId);
+      }
+
+    } catch (e) {
+      item.status = 'failed';
+      item.errorMsg = 'Upload exception: ' + e.message;
+      renderUploadQueue();
+      processUploadQueue();
+    }
+  }
+
+  async function finalizeResumableUpload(item, uploadId) {
+    const completeRes = await fetch('/api/upload/complete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': state.csrfToken || ''
+      },
+      body: JSON.stringify({ uploadId: uploadId, replace: item.replace || false })
+    });
+
+    if (completeRes.ok) {
+      item.status = 'completed';
+      item.progressPct = 100;
+      item.uploadedMB = item.totalMB;
+      renderUploadQueue();
+      processUploadQueue();
+      loadCurrentFolder();
+    } else {
+      const errData = await completeRes.json().catch(() => ({}));
+      item.status = 'failed';
+      item.errorMsg = getFriendlyErrorMessage(completeRes.status, errData.detail);
+      renderUploadQueue();
+      processUploadQueue();
+    }
+  }
+
+  function uploadFileSingleRequest(item) {
     const xhr = new XMLHttpRequest();
     item.xhr = xhr;
 
@@ -932,7 +1177,9 @@
         item.progressPct = Math.round((e.loaded / e.total) * 100);
         const elapsedSec = (Date.now() - startTime) / 1000;
         const speedBps = elapsedSec > 0 ? (e.loaded / elapsedSec) : 0;
-        item.speedMBs = (speedBps / (1024 * 1024)).toFixed(1);
+        const speedMBsNum = (speedBps / (1024 * 1024));
+        item.speedMBs = speedMBsNum.toFixed(1);
+        item.speedMbps = (speedMBsNum * 8).toFixed(1);
         
         const remainingBytes = e.total - e.loaded;
         item.etaSec = speedBps > 0 ? Math.ceil(remainingBytes / speedBps) : 0;
@@ -992,13 +1239,15 @@
   function cancelUpload(itemId) {
     const item = state.uploadQueue.find(i => i.id === itemId);
     if (item) {
+      if (item.abortControllers) {
+        item.abortControllers.forEach(c => c.abort());
+      }
       if (item.xhr) {
         item.xhr.abort();
-      } else {
-        item.status = 'cancelled';
-        renderUploadQueue();
-        processUploadQueue();
       }
+      item.status = 'cancelled';
+      renderUploadQueue();
+      processUploadQueue();
     }
   }
 

@@ -26,6 +26,8 @@ SESSION_SECRET = os.getenv("DOCVAULT_SESSION_SECRET", os.getenv("SESSION_SECRET"
 TRASH_RETENTION_DAYS = int(os.getenv("DOCVAULT_TRASH_RETENTION_DAYS", "30"))
 CHUNK_SIZE_MB = int(os.getenv("DOCVAULT_CHUNK_SIZE_MB", "8"))
 UPLOAD_EXPIRATION_HOURS = int(os.getenv("DOCVAULT_UPLOAD_EXPIRATION_HOURS", "24"))
+CHUNK_CONCURRENCY = int(os.getenv("DOCVAULT_CHUNK_CONCURRENCY", "4"))
+MAX_CHUNK_CONCURRENCY = int(os.getenv("DOCVAULT_MAX_CHUNK_CONCURRENCY", "6"))
 
 # PBKDF2-HMAC-SHA256 Password Hashing & Salt
 def hash_password(password: str, salt: bytes) -> str:
@@ -497,6 +499,8 @@ async def init_resumable_upload(
         "status": "success",
         "uploadId": upload_id,
         "chunkSize": CHUNK_SIZE_MB * 1024 * 1024,
+        "concurrency": CHUNK_CONCURRENCY,
+        "maxConcurrency": MAX_CHUNK_CONCURRENCY,
         "uploadedChunks": []
     }
 
