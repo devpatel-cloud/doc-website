@@ -411,6 +411,9 @@
                 </svg>
                 Download
               </a>
+              <button type="button" class="btn-card-action" title="File Info & Checksum" onclick="event.stopPropagation(); window.DocPortal.openMetadataModal('${escapeJS(itemRelPath)}')">
+                ℹ️ Info
+              </button>
               <button type="button" class="btn-card-action btn-delete-action" title="Delete Document" onclick="event.stopPropagation(); window.DocPortal.handleDeleteClick('${escapeJS(item.name)}', '${escapeJS(itemRelPath)}', false, 0)">
                 🗑️ Delete
               </button>
@@ -494,6 +497,9 @@
                     <line x1="12" y1="15" x2="12" y2="3"></line>
                   </svg>
                 </a>
+                <button type="button" class="btn-icon-action" title="File Info & Checksum" onclick="event.stopPropagation(); window.DocPortal.openMetadataModal('${escapeJS(itemRelPath)}')">
+                  ℹ️
+                </button>
                 <button type="button" class="btn-icon-action btn-delete-action" title="Delete Document" onclick="event.stopPropagation(); window.DocPortal.handleDeleteClick('${escapeJS(item.name)}', '${escapeJS(itemRelPath)}', false, 0)">
                   🗑️
                 </button>
@@ -676,15 +682,18 @@
     const btnOpenUpload = document.getElementById('btn-open-upload');
     const btnAdminAuth = document.getElementById('btn-admin-auth');
     const btnAdminLogoutHeader = document.getElementById('btn-admin-logout-header');
+    const btnTrashBin = document.getElementById('btn-trash-bin');
 
     if (state.isAuthenticated) {
       if (btnAdminAuth) btnAdminAuth.classList.add('hidden');
       if (btnOpenUpload) btnOpenUpload.classList.remove('hidden');
       if (btnAdminLogoutHeader) btnAdminLogoutHeader.classList.remove('hidden');
+      if (btnTrashBin) btnTrashBin.classList.remove('hidden');
     } else {
       if (btnAdminAuth) btnAdminAuth.classList.remove('hidden');
       if (btnOpenUpload) btnOpenUpload.classList.add('hidden');
       if (btnAdminLogoutHeader) btnAdminLogoutHeader.classList.add('hidden');
+      if (btnTrashBin) btnTrashBin.classList.add('hidden');
     }
   }
 
@@ -1075,6 +1084,31 @@
     
     const btnAdminAuth = document.getElementById('btn-admin-auth');
     const btnAdminLogoutHeader = document.getElementById('btn-admin-logout-header');
+    const btnStorage = document.getElementById('btn-storage-dashboard');
+    const btnStorageClose = document.getElementById('btn-storage-close');
+    const btnTrash = document.getElementById('btn-trash-bin');
+    const btnTrashClose = document.getElementById('btn-trash-close');
+    const btnTrashCloseFooter = document.getElementById('btn-trash-close-footer');
+    const btnMetaClose = document.getElementById('btn-meta-close');
+    const btnCopySha256 = document.getElementById('btn-copy-sha256');
+
+    if (btnStorage) btnStorage.addEventListener('click', openStorageModal);
+    if (btnStorageClose) btnStorageClose.addEventListener('click', () => document.getElementById('storage-modal').classList.add('hidden'));
+
+    if (btnTrash) btnTrash.addEventListener('click', openTrashModal);
+    if (btnTrashClose) btnTrashClose.addEventListener('click', () => document.getElementById('trash-modal').classList.add('hidden'));
+    if (btnTrashCloseFooter) btnTrashCloseFooter.addEventListener('click', () => document.getElementById('trash-modal').classList.add('hidden'));
+
+    if (btnMetaClose) btnMetaClose.addEventListener('click', () => document.getElementById('metadata-modal').classList.add('hidden'));
+    if (btnCopySha256) {
+      btnCopySha256.addEventListener('click', () => {
+        const text = document.getElementById('meta-sha256').textContent;
+        if (text && text !== 'Computing...') {
+          navigator.clipboard.writeText(text);
+          showToast('✓ SHA-256 copied to clipboard');
+        }
+      });
+    }
 
     if (btnAdminAuth) {
       btnAdminAuth.addEventListener('click', () => {
@@ -1425,6 +1459,155 @@
     }
   }
 
+  /* Storage Dashboard Controller */
+  async function openStorageModal() {
+    const modal = document.getElementById('storage-modal');
+    if (!modal) return;
+
+    try {
+      const res = await fetch('/api/storage/summary');
+      if (res.ok) {
+        const data = await res.json();
+        document.getElementById('storage-percent-text').textContent = `${data.disk.used_percent}%`;
+        document.getElementById('storage-bar').style.width = `${data.disk.used_percent}%`;
+        document.getElementById('storage-used-text').textContent = `Used: ${formatFileSize(data.disk.used)}`;
+        document.getElementById('storage-total-text').textContent = `Total: ${formatFileSize(data.disk.total)}`;
+
+        document.getElementById('count-documents').textContent = data.counts.documents;
+        document.getElementById('count-videos').textContent = data.counts.videos;
+        document.getElementById('count-isos').textContent = data.counts.isos;
+        document.getElementById('count-images').textContent = data.counts.images;
+        document.getElementById('count-archives').textContent = data.counts.archives;
+        document.getElementById('count-folders').textContent = data.counts.total_folders;
+
+        const largestList = document.getElementById('storage-largest-files');
+        if (largestList && data.largest_files) {
+          largestList.innerHTML = data.largest_files.slice(0, 5).map(f => `
+            <li style="display:flex; justify-content:space-between; padding: 4px 0; border-bottom: 1px solid var(--border-medium);">
+              <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 380px;">📄 ${escapeHTML(f.name)}</span>
+              <strong style="color: var(--primary-color);">${formatFileSize(f.size)}</strong>
+            </li>
+          `).join('');
+        }
+      }
+    } catch (e) {
+      console.error('Storage info fetch failed:', e);
+    }
+    modal.classList.remove('hidden');
+  }
+
+  /* Trash / Recycle Bin Controller */
+  async function openTrashModal() {
+    const modal = document.getElementById('trash-modal');
+    if (!modal) return;
+    loadTrashList();
+    modal.classList.remove('hidden');
+  }
+
+  async function loadTrashList() {
+    const tbody = document.getElementById('trash-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1rem;">Loading trash list...</td></tr>`;
+
+    try {
+      const res = await fetch('/api/trash', { credentials: 'include' });
+      if (res.ok) {
+        const list = await res.json();
+        if (!list || list.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1rem; color: var(--text-muted);">Trash is empty.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = list.map(item => `
+          <tr style="border-bottom: 1px solid var(--border-medium);">
+            <td style="padding: 0.5rem;"><strong>${escapeHTML(item.name)}</strong></td>
+            <td style="padding: 0.5rem;"><code style="font-size:0.75rem;">/${escapeHTML(item.original_path)}</code></td>
+            <td style="padding: 0.5rem;">${formatDate(new Date(item.deleted_at * 1000))}</td>
+            <td style="padding: 0.5rem; text-align: right;">
+              <button class="btn-secondary" style="font-size:0.75rem; padding: 3px 8px;" onclick="window.DocPortal.restoreTrashItem('${item.id}')">↩ Restore</button>
+              <button class="btn-secondary" style="font-size:0.75rem; padding: 3px 8px; color: var(--danger);" onclick="window.DocPortal.deleteTrashItem('${item.id}')">🗑️ Delete</button>
+            </td>
+          </tr>
+        `).join('');
+      } else {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1rem; color: var(--danger);">Please log in as admin to view trash.</td></tr>`;
+      }
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1rem; color: var(--danger);">Failed loading trash.</td></tr>`;
+    }
+  }
+
+  async function restoreTrashItem(trashId) {
+    try {
+      const res = await fetch(`/api/trash/restore/${trashId}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'X-CSRF-Token': state.csrfToken || '' }
+      });
+      if (res.ok) {
+        showToast('✓ Item restored successfully');
+        loadTrashList();
+        loadCurrentFolder();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.detail || 'Could not restore item.');
+      }
+    } catch (e) {
+      alert('Error restoring item.');
+    }
+  }
+
+  async function deleteTrashItem(trashId) {
+    try {
+      const res = await fetch(`/api/trash/permanent/${trashId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'X-CSRF-Token': state.csrfToken || '' }
+      });
+      if (res.ok) {
+        showToast('✓ Item permanently deleted');
+        loadTrashList();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.detail || 'Could not delete item.');
+      }
+    } catch (e) {
+      alert('Error deleting item.');
+    }
+  }
+
+  /* Metadata Inspection Controller */
+  async function openMetadataModal(relPath) {
+    const modal = document.getElementById('metadata-modal');
+    if (!modal) return;
+
+    document.getElementById('meta-filename').textContent = 'Loading...';
+    document.getElementById('meta-size').textContent = '-';
+    document.getElementById('meta-mtime').textContent = '-';
+    document.getElementById('meta-path').textContent = relPath;
+    document.getElementById('meta-sha256').textContent = 'Computing...';
+
+    modal.classList.remove('hidden');
+
+    const cleanPath = (relPath || '').replace(/^\/+/, '');
+    const encodedPath = encodeURIComponent(cleanPath).replace(/%2F/g, '/');
+
+    try {
+      const res = await fetch(`/api/documents/metadata/${encodedPath}`);
+      if (res.ok) {
+        const data = await res.json();
+        document.getElementById('meta-filename').textContent = data.name;
+        document.getElementById('meta-size').textContent = formatFileSize(data.size);
+        document.getElementById('meta-mtime').textContent = formatDate(new Date(data.mtime * 1000));
+        document.getElementById('meta-path').textContent = `/documents/${data.path}`;
+        document.getElementById('meta-sha256').textContent = data.sha256;
+      } else {
+        document.getElementById('meta-sha256').textContent = 'Failed loading metadata';
+      }
+    } catch (e) {
+      document.getElementById('meta-sha256').textContent = 'Error loading metadata';
+    }
+  }
+
   // Export public helpers
   window.DocPortal = {
     openViewer,
@@ -1435,7 +1618,12 @@
     retryUpload,
     clearCompletedQueue,
     openDeleteModal,
-    handleDeleteClick
+    handleDeleteClick,
+    openStorageModal,
+    openTrashModal,
+    openMetadataModal,
+    restoreTrashItem,
+    deleteTrashItem
   };
 
   // Start App
