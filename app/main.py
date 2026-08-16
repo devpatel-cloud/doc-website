@@ -770,7 +770,8 @@ async def delete_item(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF validation failed")
 
     client_ip = request.client.host if request.client else "unknown"
-    clean_path = item_path.strip().strip("/").strip("\\")
+    raw_path = urllib.parse.unquote(item_path)
+    clean_path = raw_path.strip().strip("/").strip("\\")
     
     target_path = os.path.realpath(os.path.join(DOCUMENTS_DIR, clean_path))
     validate_safe_path(target_path, allow_root=False)

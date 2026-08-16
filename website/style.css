@@ -513,23 +513,31 @@ body {
 }
 
 .storage-legend-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
   font-size: 0.8125rem;
+  margin-top: 0.5rem;
 }
 
 .legend-item {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.legend-text {
+  white-space: nowrap;
 }
 
 .legend-dot {
   width: 8px;
   height: 8px;
   border-radius: var(--radius-full);
+  flex-shrink: 0;
 }
 
 /* Folder Breadcrumbs & Navigation Bar */
