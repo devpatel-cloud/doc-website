@@ -15,9 +15,9 @@ from pydantic import BaseModel
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("docvault_backend")
 
-# Standardized Environment Variables (Default 2048 MB / 2 GB per file)
+# Standardized Environment Variables (Default 20480 MB / 20 GB per file)
 UPLOAD_PASSWORD = os.getenv("DOCVAULT_ADMIN_PASSWORD", os.getenv("UPLOAD_PASSWORD", "devpatel"))
-MAX_FILE_SIZE_MB = int(os.getenv("DOCVAULT_MAX_FILE_SIZE_MB", os.getenv("MAX_FILE_SIZE_MB", "2048")))
+MAX_FILE_SIZE_MB = int(os.getenv("DOCVAULT_MAX_FILE_SIZE_MB", os.getenv("MAX_FILE_SIZE_MB", "20480")))
 MIN_FREE_DISK_GB = float(os.getenv("DOCVAULT_MIN_FREE_DISK_GB", os.getenv("MIN_FREE_DISK_GB", "2.5")))
 DOCUMENTS_DIR = os.path.realpath(os.getenv("DOCVAULT_DOCUMENTS_DIR", os.getenv("DOCUMENTS_DIR", "/documents")))
 SESSION_SECRET = os.getenv("DOCVAULT_SESSION_SECRET", os.getenv("SESSION_SECRET", "docvault_secret_key_2026"))
@@ -28,15 +28,15 @@ failed_login_attempts: Dict[str, dict] = {} # client_ip -> {count: int, timestam
 
 # Whitelisted File Extensions (Note: .svg excluded for active content/XSS safety)
 ALLOWED_EXTENSIONS = {
-    # Documents
-    "pdf", "txt", "md", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv", "json", "zip",
+    # Documents & Disk Images
+    "pdf", "txt", "md", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv", "json", "zip", "iso",
     # Images (Raster)
     "png", "jpg", "jpeg", "webp", "gif",
     # Videos
     "mp4", "webm", "mkv", "mov", "avi", "m4v", "3gp", "mpeg", "mpg", "ts"
 }
 
-app = FastAPI(title="DocVault Admin Upload API — Large Video V2", version="2.4.0")
+app = FastAPI(title="DocVault Admin Upload API — Large Video & ISO V2", version="2.5.0")
 
 class LoginRequest(BaseModel):
     password: str
@@ -81,8 +81,10 @@ def sanitize_filename(filename: str) -> str:
     return filename[:255]
 
 def validate_magic_bytes(header_bytes: bytes, ext: str) -> bool:
-    """Validate file magic byte signatures for common formats"""
-    if ext == "pdf":
+    """Validate file magic byte signatures for common formats (ISO treated as binary blob)"""
+    if ext == "iso":
+        return True
+    elif ext == "pdf":
         return b"%PDF-" in header_bytes[:1024]
     elif ext == "png":
         return header_bytes.startswith(b"\x89PNG\r\n\x1a\n")
@@ -319,7 +321,7 @@ async def upload_file(
                     logger.warning(f"Upload size limit exceeded ({total_bytes} bytes) from IP {client_ip}")
                     raise HTTPException(
                         status_code=413,
-                        detail=f"File size exceeds maximum allowed upload limit of {MAX_FILE_SIZE_MB}MB ({MAX_FILE_SIZE_MB // 1024} GB)"
+                        detail=f"File is too large. Maximum allowed size is {MAX_FILE_SIZE_MB // 1024} GB."
                     )
                 buffer.write(chunk)
 

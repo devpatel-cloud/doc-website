@@ -120,6 +120,7 @@
     avi: { category: 'video', label: 'AVI', iconClass: 'type-video' },
 
     zip: { category: 'archive', label: 'ZIP', iconClass: 'type-archive' },
+    iso: { category: 'archive', label: 'ISO', iconClass: 'type-archive' },
     tar: { category: 'archive', label: 'TAR', iconClass: 'type-archive' },
     gz: { category: 'archive', label: 'GZ', iconClass: 'type-archive' },
     '7z': { category: 'archive', label: '7Z', iconClass: 'type-archive' }
