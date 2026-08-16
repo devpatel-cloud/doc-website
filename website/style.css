@@ -204,6 +204,28 @@ body {
   gap: 0.75rem;
 }
 
+#btn-admin-auth {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff !important;
+  border: 1px solid #2563eb;
+  border-radius: var(--radius-md);
+  padding: 0.5rem 1rem;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+#btn-admin-auth:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+  transform: translateY(-1px);
+}
+
 .btn-header-upload {
   background-color: var(--primary);
   color: #ffffff;
@@ -1325,6 +1347,49 @@ body {
   text-align: center;
   font-size: 0.8125rem;
   color: var(--text-muted);
+}
+
+/* Toast Notification Banner */
+.toast-notification {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  background-color: #1e293b;
+  color: #ffffff;
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-left: 4px solid var(--success);
+  animation: slideInUp 0.3s ease-out;
+}
+
+.btn-delete-action {
+  color: var(--danger) !important;
+  border-color: rgba(239, 68, 68, 0.2) !important;
+  background-color: var(--danger-bg) !important;
+}
+
+.btn-delete-action:hover {
+  background-color: var(--danger) !important;
+  color: #ffffff !important;
+  border-color: var(--danger) !important;
+}
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 /* Responsive adjustments */

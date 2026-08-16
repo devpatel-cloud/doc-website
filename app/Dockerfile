@@ -1,13 +1,15 @@
-FROM python:3.11-alpine
+FROM python:3.11-slim
 
-# Create non-root user and group
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+# Create non-root user (UID 100) and group (GID 101) using Debian shadow-utils
+RUN groupadd -g 101 appgroup && \
+    useradd -u 100 -g appgroup -m -s /bin/sh appuser
 
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies with upgraded pip for fast pre-compiled binary wheels
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY main.py .
@@ -15,7 +17,7 @@ COPY main.py .
 # Create temporary upload directory with non-root permissions
 RUN mkdir -p /tmp/uploads && chown -R appuser:appgroup /tmp/uploads
 
-# Switch to non-root user
+# Switch to non-root user (UID 100 / GID 101)
 USER appuser
 
 EXPOSE 8000

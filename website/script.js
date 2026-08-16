@@ -363,6 +363,9 @@
               <button class="btn-card-action btn-open-folder">
                 Open Folder →
               </button>
+              <button type="button" class="btn-card-action btn-delete-action" title="Delete Folder" onclick="event.stopPropagation(); window.DocPortal.handleDeleteClick('${escapeJS(item.name)}', '${escapeJS(item.path || (state.currentPath.length ? state.currentPath.join('/') + '/' + item.name : item.name))}', true, ${item.childCount || 0})">
+                🗑️ Delete
+              </button>
             </div>
           </div>
         `;
@@ -372,6 +375,8 @@
           label: (item.ext || 'FILE').toUpperCase(),
           iconClass: 'type-text'
         };
+
+        const itemRelPath = state.currentPath.length ? state.currentPath.join('/') + '/' + item.name : item.name;
 
         return `
           <div class="doc-card">
@@ -405,6 +410,9 @@
                 </svg>
                 Download
               </a>
+              <button type="button" class="btn-card-action btn-delete-action" title="Delete Document" onclick="event.stopPropagation(); window.DocPortal.handleDeleteClick('${escapeJS(item.name)}', '${escapeJS(itemRelPath)}', false, 0)">
+                🗑️ Delete
+              </button>
             </div>
           </div>
         `;
@@ -417,6 +425,8 @@
    */
   function renderListView() {
     listTbody.innerHTML = state.filteredItems.map(item => {
+      const itemRelPath = state.currentPath.length ? state.currentPath.join('/') + '/' + item.name : item.name;
+
       if (item.isFolder) {
         const countText = item.childCount !== null ? `${item.childCount} items` : 'Folder';
         return `
@@ -437,7 +447,12 @@
             <td class="col-size">${countText}</td>
             <td class="col-date">${formatDate(item.mtime)}</td>
             <td class="col-actions">
-              <button class="btn-secondary" style="padding: 0.25rem 0.625rem; font-size: 0.75rem;">Open →</button>
+              <div class="list-actions">
+                <button class="btn-secondary" style="padding: 0.25rem 0.625rem; font-size: 0.75rem;">Open →</button>
+                <button type="button" class="btn-icon-action btn-delete-action" title="Delete Folder" onclick="event.stopPropagation(); window.DocPortal.handleDeleteClick('${escapeJS(item.name)}', '${escapeJS(itemRelPath)}', true, ${item.childCount || 0})">
+                  🗑️
+                </button>
+              </div>
             </td>
           </tr>
         `;
@@ -478,6 +493,9 @@
                     <line x1="12" y1="15" x2="12" y2="3"></line>
                   </svg>
                 </a>
+                <button type="button" class="btn-icon-action btn-delete-action" title="Delete Document" onclick="event.stopPropagation(); window.DocPortal.handleDeleteClick('${escapeJS(item.name)}', '${escapeJS(itemRelPath)}', false, 0)">
+                  🗑️
+                </button>
               </div>
             </td>
           </tr>
@@ -621,7 +639,15 @@
         state.isAuthenticated = true;
         state.csrfToken = data.csrfToken || '';
         authModal.classList.add('hidden');
-        openUploadDrawer();
+        updateHeaderAuthUI();
+        render();
+        showToast('✓ Logged in as Administrator');
+
+        if (state.pendingDeleteTarget) {
+          const { name, relPath, isFolder, itemCount } = state.pendingDeleteTarget;
+          state.pendingDeleteTarget = null;
+          openDeleteModal(name, relPath, isFolder, itemCount);
+        }
       } else {
         const errData = await res.json();
         authErrorMsg.textContent = errData.detail || 'Invalid credentials.';
@@ -638,7 +664,27 @@
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch (e) {}
     state.isAuthenticated = false;
+    state.csrfToken = '';
     uploadModal.classList.add('hidden');
+    updateHeaderAuthUI();
+    render();
+    showToast('Logged out successfully');
+  }
+
+  function updateHeaderAuthUI() {
+    const btnOpenUpload = document.getElementById('btn-open-upload');
+    const btnAdminAuth = document.getElementById('btn-admin-auth');
+    const btnAdminLogoutHeader = document.getElementById('btn-admin-logout-header');
+
+    if (state.isAuthenticated) {
+      if (btnAdminAuth) btnAdminAuth.classList.add('hidden');
+      if (btnOpenUpload) btnOpenUpload.classList.remove('hidden');
+      if (btnAdminLogoutHeader) btnAdminLogoutHeader.classList.remove('hidden');
+    } else {
+      if (btnAdminAuth) btnAdminAuth.classList.remove('hidden');
+      if (btnOpenUpload) btnOpenUpload.classList.add('hidden');
+      if (btnAdminLogoutHeader) btnAdminLogoutHeader.classList.add('hidden');
+    }
   }
 
   async function openUploadDrawer() {
@@ -1025,6 +1071,23 @@
 
     // Admin Auth Listeners
     btnOpenUpload.addEventListener('click', handleOpenUploadClick);
+    
+    const btnAdminAuth = document.getElementById('btn-admin-auth');
+    const btnAdminLogoutHeader = document.getElementById('btn-admin-logout-header');
+
+    if (btnAdminAuth) {
+      btnAdminAuth.addEventListener('click', () => {
+        authPasswordInput.value = '';
+        authErrorMsg.classList.add('hidden');
+        authModal.classList.remove('hidden');
+        authPasswordInput.focus();
+      });
+    }
+
+    if (btnAdminLogoutHeader) {
+      btnAdminLogoutHeader.addEventListener('click', handleAdminLogout);
+    }
+
     authForm.addEventListener('submit', handleAuthSubmit);
     authCancelBtn.addEventListener('click', () => authModal.classList.add('hidden'));
     authCloseBtn.addEventListener('click', () => authModal.classList.add('hidden'));
@@ -1085,6 +1148,15 @@
       if (e.target === viewerModal) closeModal();
     });
 
+    // Delete Modal Listeners
+    const btnDeleteCancel = document.getElementById('btn-delete-cancel');
+    const btnDeleteClose = document.getElementById('btn-delete-close');
+    const btnDeleteConfirm = document.getElementById('btn-delete-confirm');
+
+    if (btnDeleteCancel) btnDeleteCancel.addEventListener('click', closeDeleteModal);
+    if (btnDeleteClose) btnDeleteClose.addEventListener('click', closeDeleteModal);
+    if (btnDeleteConfirm) btnDeleteConfirm.addEventListener('click', performItemDelete);
+
     // Shortcuts
     document.addEventListener('keydown', (e) => {
       if (e.key === '/' && document.activeElement !== searchInput) {
@@ -1094,8 +1166,150 @@
         if (!viewerModal.classList.contains('hidden')) closeModal();
         if (!authModal.classList.contains('hidden')) authModal.classList.add('hidden');
         if (!uploadModal.classList.contains('hidden')) uploadModal.classList.add('hidden');
+        const delModal = document.getElementById('delete-modal');
+        if (delModal && !delModal.classList.contains('hidden')) closeDeleteModal();
       }
     });
+  }
+
+  /* Admin Delete Feature Controller */
+  let deleteTargetContext = null;
+
+  function handleDeleteClick(name, relPath, isFolder = false, itemCount = 0) {
+    if (!state.isAuthenticated) {
+      state.pendingDeleteTarget = { name, relPath, isFolder, itemCount };
+      authPasswordInput.value = '';
+      authErrorMsg.classList.add('hidden');
+      authModal.classList.remove('hidden');
+      authPasswordInput.focus();
+    } else {
+      openDeleteModal(name, relPath, isFolder, itemCount);
+    }
+  }
+
+  function openDeleteModal(name, relPath, isFolder = false, itemCount = 0) {
+    deleteTargetContext = { name, relPath, isFolder, itemCount };
+
+    const modal = document.getElementById('delete-modal');
+    const heading = document.getElementById('delete-modal-heading');
+    const itemName = document.getElementById('delete-item-name');
+    const warning = document.getElementById('delete-modal-warning');
+    const confirmBox = document.getElementById('delete-folder-confirm-box');
+    const folderInput = document.getElementById('delete-folder-input');
+    const errorBox = document.getElementById('delete-modal-error');
+    const btnConfirm = document.getElementById('btn-delete-confirm');
+
+    if (!modal) return;
+
+    errorBox.classList.add('hidden');
+    errorBox.textContent = '';
+    btnConfirm.disabled = false;
+    btnConfirm.textContent = 'Delete Permanently';
+
+    itemName.textContent = name;
+
+    if (isFolder) {
+      heading.textContent = 'Delete Folder?';
+      if (itemCount > 0) {
+        warning.textContent = `This folder contains ${itemCount} item(s). All files inside will be permanently deleted.`;
+        confirmBox.classList.remove('hidden');
+        folderInput.value = '';
+        folderInput.focus();
+      } else {
+        warning.textContent = 'This empty folder will be permanently deleted.';
+        confirmBox.classList.add('hidden');
+      }
+    } else {
+      heading.textContent = 'Delete Document?';
+      warning.textContent = 'This file will be permanently deleted. This action cannot be undone.';
+      confirmBox.classList.add('hidden');
+    }
+
+    modal.classList.remove('hidden');
+  }
+
+  function closeDeleteModal() {
+    const modal = document.getElementById('delete-modal');
+    if (modal) modal.classList.add('hidden');
+    deleteTargetContext = null;
+  }
+
+  async function performItemDelete() {
+    if (!deleteTargetContext) return;
+    const { name, relPath, isFolder, itemCount } = deleteTargetContext;
+
+    const confirmBox = document.getElementById('delete-folder-confirm-box');
+    const folderInput = document.getElementById('delete-folder-input');
+    const errorBox = document.getElementById('delete-modal-error');
+    const btnConfirm = document.getElementById('btn-delete-confirm');
+    const btnCancel = document.getElementById('btn-delete-cancel');
+
+    if (isFolder && itemCount > 0 && !confirmBox.classList.contains('hidden')) {
+      if (folderInput.value.trim() !== 'DELETE') {
+        errorBox.textContent = 'Please type DELETE in exact uppercase to confirm folder deletion.';
+        errorBox.classList.remove('hidden');
+        return;
+      }
+    }
+
+    if (!state.csrfToken) {
+      await checkAuthStatus();
+    }
+
+    btnConfirm.disabled = true;
+    btnCancel.disabled = true;
+    btnConfirm.textContent = 'Deleting...';
+
+    const cleanPath = (relPath || '').replace(/^\/+/, '');
+    const encodedPath = encodeURIComponent(cleanPath).replace(/%2F/g, '/');
+    let url = `/api/documents/${encodedPath}`;
+    if (isFolder && itemCount > 0) {
+      url += '?confirm=true';
+    }
+
+    try {
+      const res = await fetch(url, {
+        method: 'DELETE',
+        headers: {
+          'X-CSRF-Token': state.csrfToken || ''
+        }
+      });
+
+      if (res.ok) {
+        closeDeleteModal();
+        showToast(`✓ "${name}" deleted successfully`);
+        loadCurrentFolder();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        let msg = 'Unable to delete this document right now. Please try again.';
+        if (res.status === 401) msg = 'Your admin session has expired. Please sign in again.';
+        else if (res.status === 403) msg = "You don't have permission to delete this document.";
+        else if (res.status === 404) msg = 'This document or folder no longer exists.';
+        else if (res.status === 400) msg = 'This deletion request is not allowed for security reasons.';
+        
+        errorBox.textContent = errData.detail || msg;
+        errorBox.classList.remove('hidden');
+      }
+    } catch (e) {
+      errorBox.textContent = 'Network error. Could not complete deletion.';
+      errorBox.classList.remove('hidden');
+    } finally {
+      btnConfirm.disabled = false;
+      btnCancel.disabled = false;
+      btnConfirm.textContent = 'Delete Permanently';
+    }
+  }
+
+  function showToast(message) {
+    const toast = document.getElementById('toast-notification');
+    const toastMsg = document.getElementById('toast-message');
+    if (toast && toastMsg) {
+      toastMsg.textContent = message;
+      toast.classList.remove('hidden');
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 3500);
+    }
   }
 
   function applyViewMode(mode) {
@@ -1191,7 +1405,9 @@
     removeQueueItem,
     cancelUpload,
     retryUpload,
-    clearCompletedQueue
+    clearCompletedQueue,
+    openDeleteModal,
+    handleDeleteClick
   };
 
   // Start App

@@ -15,9 +15,11 @@ For step-by-step production server setup with HTTPS & domain names, see **[SERVE
 - 🔐 **Password-Protected Admin Upload System**: Click `Upload` in the header, enter password (`devpatel` configured in `.env`), and upload files directly from the browser.
 - 📁 **Interactive Destination Folder Tree**: Choose the destination folder from an automatically rendered server folder tree before uploading.
 - 📤 **Drag & Drop Multi-File Uploads**: Drag and drop multiple documents or videos with real-time percentage progress bars.
+- 🗑️ **Secure Admin Delete Feature**: Logged-in administrators can permanently delete documents or folders directly from the portal via `DELETE /api/documents/{path}`. Includes custom modern confirmation modal (requires typing `DELETE` for non-empty folders), toast notifications, and strict path traversal / symlink / root directory shields. Public visitors remain 100% read-only.
+- ⚡ **Optimized Docker Build (`python:3.11-slim`)**: Fast, deterministic image builds (~25s) using pre-compiled binary wheels under Debian slim while maintaining non-root process security (`UID 100` / `GID 101`).
 - 🎬 **Large Video Streaming & HTTP Byte-Range Requests**: Upload videos up to **2 GB** (`DOCVAULT_MAX_FILE_SIZE_MB=2048`). Native Nginx HTTP Range Requests (`HTTP 206 Partial Content`, `Accept-Ranges: bytes`) enable instant seeking in large MP4, WebM, MKV, MOV, and AVI videos without loading complete files into memory.
 - 💾 **RAM-Safe Chunked Disk Streaming**: Uploads stream in 1MB chunks directly to disk (`.filename.part`), keeping FastAPI container memory consumption low (~42 MB) regardless of file size.
-- 📤 **Real-Time Progress & Speed Metrics**: Multi-file upload drawer displays upload progress percentage, uploaded MB vs total size, upload speed (MB/s), and estimated time remaining (ETA).
+- 📤 **Independent Per-File Upload Queue**: Concurrent queue (`MAX_CONCURRENT_UPLOADS = 2`) with per-file progress cards, real-time speed (MB/s), ETA, individual `Cancel` & `Retry` controls, and zero browser `alert()` popups.
 - 🛡️ **Duplicate File & Security Validation**:
   - Magic byte file signature verification (`%PDF-`, `\x89PNG`, `PK\x03\x04`, `ftyp`).
   - Path traversal & symlink prevention.
