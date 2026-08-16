@@ -618,11 +618,36 @@
       const initData = await initRes.json();
       const uploadId = initData.uploadId;
       const pendingQueue = Array.from({ length: totalChunks }, (_, i) => i);
-      let uploadedBytes = 0;
+      
+      let completedBytes = 0;
+      const workerInFlight = [0, 0, 0, 0];
       const startTime = Date.now();
-      let activeWorkerCount = INITIAL_CONCURRENCY;
+      item.activeWorkers = 4;
 
-      const runWorker = async () => {
+      // High-Frequency Live UI Ticker (Fires every 250ms / 4x per second for smooth 1-second live updates)
+      const uiTicker = setInterval(() => {
+        if (item.status === 'uploading') {
+          const currentInFlightSum = workerInFlight.reduce((a, b) => a + b, 0);
+          const totalUploaded = Math.min(item.file.size, completedBytes + currentInFlightSum);
+          
+          item.progressPct = Math.min(99, Math.round((totalUploaded / item.file.size) * 100));
+          item.uploadedMB = (totalUploaded / (1024 * 1024)).toFixed(1);
+
+          const elapsedSec = (Date.now() - startTime) / 1000;
+          const speedBps = elapsedSec > 0 ? (totalUploaded / elapsedSec) : 0;
+          const speedMBsNum = (speedBps / (1024 * 1024));
+          item.speedMBs = speedMBsNum.toFixed(1);
+          item.speedMbps = (speedMBsNum * 8).toFixed(1);
+          const remainingBytes = item.file.size - totalUploaded;
+          item.etaSec = speedBps > 0 ? Math.ceil(remainingBytes / speedBps) : 0;
+
+          renderUploadQueueWidget();
+        } else {
+          clearInterval(uiTicker);
+        }
+      }, 250);
+
+      const runWorker = async (workerId) => {
         while (pendingQueue.length > 0 && item.status === 'uploading') {
           const chunkIndex = pendingQueue.shift();
           if (chunkIndex === undefined) break;
@@ -632,41 +657,54 @@
           const chunkBlob = item.file.slice(start, end);
           const chunkSize = end - start;
 
-          const formData = new FormData();
-          formData.append('uploadId', uploadId);
-          formData.append('chunkIndex', chunkIndex);
-          formData.append('chunk', chunkBlob, item.file.name);
+          workerInFlight[workerId] = 0;
 
-          try {
-            const chunkRes = await fetch('/api/upload/chunk', {
-              method: 'POST',
-              headers: { 'X-CSRF-Token': state.csrfToken || '' },
-              body: formData
-            });
+          const success = await new Promise((resolve) => {
+            const xhr = new XMLHttpRequest();
+            item.xhr = xhr;
+            const formData = new FormData();
+            formData.append('uploadId', uploadId);
+            formData.append('chunkIndex', chunkIndex);
+            formData.append('chunk', chunkBlob, item.file.name);
 
-            if (chunkRes.ok) {
-              uploadedBytes += chunkSize;
-              item.progressPct = Math.round((uploadedBytes / item.file.size) * 100);
-              const elapsedSec = (Date.now() - startTime) / 1000;
-              const speedBps = elapsedSec > 0 ? (uploadedBytes / elapsedSec) : 0;
-              const speedMBsNum = (speedBps / (1024 * 1024));
-              item.speedMBs = speedMBsNum.toFixed(1);
-              item.speedMbps = (speedMBsNum * 8).toFixed(1);
-              item.etaSec = speedBps > 0 ? Math.ceil((item.file.size - uploadedBytes) / speedBps) : 0;
-              item.uploadedMB = (uploadedBytes / (1024 * 1024)).toFixed(1);
-
-              renderUploadQueueWidget();
-            } else {
-              pendingQueue.unshift(chunkIndex);
+            xhr.open('POST', '/api/upload/chunk', true);
+            if (state.csrfToken) {
+              xhr.setRequestHeader('X-CSRF-Token', state.csrfToken);
             }
-          } catch (e) {
+
+            xhr.upload.onprogress = (e) => {
+              if (e.lengthComputable) {
+                workerInFlight[workerId] = e.loaded;
+              }
+            };
+
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                resolve(true);
+              } else {
+                resolve(false);
+              }
+            };
+            xhr.onerror = () => resolve(false);
+            xhr.onabort = () => resolve(false);
+
+            xhr.send(formData);
+          });
+
+          if (success) {
+            completedBytes += chunkSize;
+            workerInFlight[workerId] = 0;
+          } else {
+            workerInFlight[workerId] = 0;
             pendingQueue.unshift(chunkIndex);
+            await new Promise(r => setTimeout(r, 1000));
           }
         }
       };
 
-      const workers = [runWorker(), runWorker(), runWorker(), runWorker()];
+      const workers = [runWorker(0), runWorker(1), runWorker(2), runWorker(3)];
       await Promise.all(workers);
+      clearInterval(uiTicker);
 
       const completeRes = await fetch('/api/upload/complete', {
         method: 'POST',
@@ -680,6 +718,7 @@
       if (completeRes.ok) {
         item.status = 'completed';
         item.progressPct = 100;
+        item.uploadedMB = item.totalMB;
         showToast(`✓ Uploaded ${item.file.name} cleanly`);
         renderUploadQueueWidget();
         processUploadQueue();
