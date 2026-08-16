@@ -17,14 +17,35 @@ from pydantic import BaseModel
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("docvault_backend")
 
-# Standardized Environment Variables (Default 20480 MB / 20 GB per file)
-UPLOAD_PASSWORD = os.getenv("DOCVAULT_ADMIN_PASSWORD", os.getenv("UPLOAD_PASSWORD", "devpatel"))
+# Standardized Environment Variables
+RAW_ADMIN_PASSWORD = os.getenv("DOCVAULT_ADMIN_PASSWORD", os.getenv("UPLOAD_PASSWORD", "")).strip()
 MAX_FILE_SIZE_MB = int(os.getenv("DOCVAULT_MAX_FILE_SIZE_MB", os.getenv("MAX_FILE_SIZE_MB", "20480")))
 MIN_FREE_DISK_GB = float(os.getenv("DOCVAULT_MIN_FREE_DISK_GB", os.getenv("MIN_FREE_DISK_GB", "2.5")))
 DOCUMENTS_DIR = os.path.realpath(os.getenv("DOCVAULT_DOCUMENTS_DIR", os.getenv("DOCUMENTS_DIR", "/documents")))
 SESSION_SECRET = os.getenv("DOCVAULT_SESSION_SECRET", os.getenv("SESSION_SECRET", "docvault_secret_key_2026"))
 TRASH_RETENTION_DAYS = int(os.getenv("DOCVAULT_TRASH_RETENTION_DAYS", "30"))
 CHUNK_SIZE_MB = int(os.getenv("DOCVAULT_CHUNK_SIZE_MB", "8"))
+UPLOAD_EXPIRATION_HOURS = int(os.getenv("DOCVAULT_UPLOAD_EXPIRATION_HOURS", "24"))
+
+# PBKDF2-HMAC-SHA256 Password Hashing & Salt
+def hash_password(password: str, salt: bytes) -> str:
+    """PBKDF2-HMAC-SHA256 password hashing with 100,000 iterations"""
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100000)
+    return key.hex()
+
+ADMIN_SALT = secrets.token_bytes(16)
+ADMIN_PASSWORD_HASH = hash_password(RAW_ADMIN_PASSWORD, ADMIN_SALT) if RAW_ADMIN_PASSWORD else None
+
+def verify_admin_password(provided_password: str) -> bool:
+    """Constant-time PBKDF2 password verification. Fails safely if password is not configured."""
+    if not ADMIN_PASSWORD_HASH or not RAW_ADMIN_PASSWORD:
+        logger.error("[SECURITY CONFIG ERROR] DOCVAULT_ADMIN_PASSWORD environment variable is missing!")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server configuration error: DOCVAULT_ADMIN_PASSWORD environment variable is not configured."
+        )
+    provided_hash = hash_password(provided_password, ADMIN_SALT)
+    return secrets.compare_digest(provided_hash, ADMIN_PASSWORD_HASH)
 
 # Session Store: session_token -> { "created": float, "csrf_token": str }
 valid_sessions: Dict[str, dict] = {}
@@ -33,7 +54,7 @@ failed_login_attempts: Dict[str, dict] = {} # client_ip -> {count: int, timestam
 # Active Chunked Upload Sessions Store: upload_id -> session dict
 valid_upload_sessions: Dict[str, dict] = {}
 
-# Whitelisted File Extensions (Note: .svg excluded for active content/XSS safety)
+# Whitelisted File Extensions
 ALLOWED_EXTENSIONS = {
     # Documents & Disk Images
     "pdf", "txt", "md", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv", "json", "zip", "iso",
@@ -43,7 +64,7 @@ ALLOWED_EXTENSIONS = {
     "mp4", "webm", "mkv", "mov", "avi", "m4v", "3gp", "mpeg", "mpg", "ts"
 }
 
-app = FastAPI(title="DocVault Admin Upload API — Resumable 20GB Platform", version="3.0.0")
+app = FastAPI(title="DocVault Admin Upload API — Hardened 20GB Platform", version="3.1.0")
 
 class LoginRequest(BaseModel):
     password: str
@@ -77,7 +98,12 @@ def check_rate_limit(client_ip: str):
 def get_session_info(request: Request) -> Optional[dict]:
     session_id = request.cookies.get("docvault_session")
     if session_id and session_id in valid_sessions:
-        return valid_sessions[session_id]
+        session = valid_sessions[session_id]
+        # Session expiration check (24h default)
+        if time.time() - session.get("created", 0) > 86400:
+            del valid_sessions[session_id]
+            return None
+        return session
     return None
 
 def require_auth(request: Request) -> dict:
@@ -88,6 +114,37 @@ def require_auth(request: Request) -> dict:
             detail="Authentication required"
         )
     return session
+
+def validate_safe_path(target_path: str, allow_root: bool = False) -> str:
+    """Canonical realpath & commonpath boundary shield against path traversal, symlinks & prefix escapes"""
+    if not target_path:
+        raise HTTPException(status_code=400, detail="Empty path specified")
+    
+    real_path = os.path.realpath(target_path)
+    
+    # Commonpath verification guarantees target is strictly inside DOCUMENTS_DIR (prevents /documents_evil bypass)
+    try:
+        if os.path.commonpath([DOCUMENTS_DIR, real_path]) != DOCUMENTS_DIR:
+            raise HTTPException(status_code=400, detail="Invalid path: outside document storage root")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid path structure")
+
+    if os.path.islink(real_path) or os.path.islink(target_path):
+        raise HTTPException(status_code=400, detail="Symlink paths are forbidden for security reasons")
+
+    rel_from_root = os.path.relpath(real_path, DOCUMENTS_DIR).replace("\\", "/")
+    if rel_from_root == "." or rel_from_root == "":
+        if not allow_root:
+            raise HTTPException(status_code=400, detail="Cannot target root documents directory")
+        return real_path
+
+    # Block direct access to hidden system folders (.trash, .metadata, .tmp_uploads, .audit.log)
+    parts = rel_from_root.split("/")
+    for p in parts:
+        if p.startswith("."):
+            raise HTTPException(status_code=404, detail="Requested item not found")
+
+    return real_path
 
 def sanitize_filename(filename: str) -> str:
     """Strictly sanitize uploaded filename to prevent directory traversal and injection"""
@@ -131,18 +188,42 @@ def calculate_sha256(filepath: str) -> str:
             hasher.update(chunk)
     return hasher.hexdigest()
 
+def sanitize_log_string(s: str) -> str:
+    """Strip newlines and control characters to prevent log injection"""
+    return re.sub(r"[\r\n\t\x00-\x1f]", "", str(s or ""))[:200]
+
 def log_audit_event(action: str, client_ip: str, admin_user: str = "admin", details: dict = None):
-    """Record security/admin audit log to DOCUMENTS_DIR/.audit.log (JSON Lines)"""
+    """Record sanitized security audit log to DOCUMENTS_DIR/.audit.log with 5MB rotation cap"""
     try:
         os.makedirs(DOCUMENTS_DIR, mode=0o775, exist_ok=True)
-        log_file = os.path.join(DOCUMENTS_DIR, ".audit.log")
+        log_file = os.path.realpath(os.path.join(DOCUMENTS_DIR, ".audit.log"))
+        
+        safe_details = {}
+        if details:
+            for k, v in details.items():
+                if k.lower() in ("password", "hash", "secret", "token", "cookie", "auth"):
+                    safe_details[k] = "[REDACTED]"
+                else:
+                    safe_details[k] = sanitize_log_string(v)
+
         event = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "action": action,
-            "admin": admin_user,
-            "ip": client_ip,
-            "details": details or {}
+            "action": sanitize_log_string(action),
+            "admin": sanitize_log_string(admin_user),
+            "ip": sanitize_log_string(client_ip),
+            "details": safe_details
         }
+
+        # Log rotation check (5MB cap)
+        if os.path.exists(log_file) and os.path.getsize(log_file) > 5 * 1024 * 1024:
+            try:
+                with open(log_file, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                with open(log_file, "w", encoding="utf-8") as f:
+                    f.writelines(lines[-2500:])
+            except Exception:
+                pass
+
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(event) + "\n")
     except Exception as e:
@@ -197,11 +278,33 @@ def purge_expired_trash():
     except Exception as e:
         logger.error(f"Trash auto-purge failure: {e}")
 
+def cleanup_abandoned_uploads():
+    """Purge upload sessions and chunk directories older than 24 hours"""
+    try:
+        now = time.time()
+        cutoff = now - (UPLOAD_EXPIRATION_HOURS * 3600)
+        expired_ids = []
+
+        for upload_id, sess in list(valid_upload_sessions.items()):
+            if sess.get("created_at", now) < cutoff:
+                expired_ids.append(upload_id)
+                staging_dir = sess.get("staging_dir")
+                if staging_dir and os.path.exists(staging_dir) and staging_dir.startswith(os.path.realpath(os.path.join(DOCUMENTS_DIR, ".tmp_uploads"))):
+                    shutil.rmtree(staging_dir, ignore_errors=True)
+                logger.info(f"[UPLOAD CLEANUP] Purged expired upload session: {upload_id}")
+
+        for uid in expired_ids:
+            if uid in valid_upload_sessions:
+                del valid_upload_sessions[uid]
+    except Exception as e:
+        logger.error(f"Abandoned upload cleanup failure: {e}")
+
 @app.on_event("startup")
 async def startup_event():
     os.makedirs(DOCUMENTS_DIR, mode=0o775, exist_ok=True)
     os.makedirs(TRASH_DIR, mode=0o775, exist_ok=True)
     purge_expired_trash()
+    cleanup_abandoned_uploads()
 
 # --- Auth Endpoints ---
 
@@ -210,7 +313,7 @@ async def login(data: LoginRequest, request: Request, response: Response):
     client_ip = request.client.host if request.client else "unknown"
     check_rate_limit(client_ip)
 
-    if secrets.compare_digest(data.password, UPLOAD_PASSWORD):
+    if verify_admin_password(data.password):
         session_token = secrets.token_hex(32)
         csrf_token = secrets.token_hex(16)
         valid_sessions[session_token] = {
@@ -283,7 +386,9 @@ async def get_folder_tree():
     def scan_dir(rel_path: str = ""):
         abs_path = os.path.realpath(os.path.join(DOCUMENTS_DIR, rel_path)) if rel_path else DOCUMENTS_DIR
         
-        if not abs_path.startswith(DOCUMENTS_DIR) or os.path.islink(abs_path):
+        try:
+            validate_safe_path(abs_path, allow_root=True)
+        except Exception:
             return []
 
         children = []
@@ -298,7 +403,9 @@ async def get_folder_tree():
                 continue
             
             entry_abs = os.path.realpath(os.path.join(abs_path, entry))
-            if not entry_abs.startswith(DOCUMENTS_DIR) or os.path.islink(entry_abs):
+            try:
+                validate_safe_path(entry_abs, allow_root=False)
+            except Exception:
                 continue
 
             if os.path.isdir(entry_abs):
@@ -350,10 +457,11 @@ async def init_resumable_upload(
 
     clean_folder_path = (req.folderPath or "").strip().strip("/").strip("\\")
     target_dir = os.path.realpath(os.path.join(DOCUMENTS_DIR, clean_folder_path))
-    if not target_dir.startswith(DOCUMENTS_DIR) or os.path.islink(target_dir):
-        raise HTTPException(status_code=400, detail="Invalid destination folder path")
+    validate_safe_path(target_dir, allow_root=True)
 
     target_file_path = os.path.realpath(os.path.join(target_dir, filename))
+    validate_safe_path(target_file_path, allow_root=False)
+
     if os.path.exists(target_file_path) and not req.replace:
         return JSONResponse(
             status_code=409,
@@ -412,7 +520,9 @@ async def upload_chunk(
         raise HTTPException(status_code=400, detail="Invalid chunk index")
 
     staging_dir = session_info["staging_dir"]
-    chunk_path = os.path.join(staging_dir, f"chunk_{chunkIndex}")
+    chunk_path = os.path.realpath(os.path.join(staging_dir, f"chunk_{chunkIndex}"))
+    if not chunk_path.startswith(staging_dir):
+        raise HTTPException(status_code=400, detail="Invalid chunk path")
 
     with open(chunk_path, "wb") as f:
         while data := await chunk.read(1024 * 1024):
@@ -466,8 +576,11 @@ async def complete_resumable_upload(
             raise HTTPException(status_code=400, detail=f"Missing chunk {i}. Incomplete upload.")
 
     target_dir = os.path.realpath(os.path.join(DOCUMENTS_DIR, clean_folder_path))
+    validate_safe_path(target_dir, allow_root=True)
     os.makedirs(target_dir, mode=0o775, exist_ok=True)
+
     target_file_path = os.path.realpath(os.path.join(target_dir, filename))
+    validate_safe_path(target_file_path, allow_root=False)
 
     part_file = os.path.join(staging_dir, f".{filename}.part")
     hasher = hashlib.sha256()
@@ -534,7 +647,7 @@ async def complete_resumable_upload(
         "message": "File uploaded and finalized successfully"
     }
 
-# --- Backward Compatible Single POST /api/upload Endpoint ---
+# --- Single POST /api/upload Endpoint ---
 
 @app.post("/api/upload")
 async def upload_file(
@@ -561,9 +674,7 @@ async def upload_file(
 
     clean_folder_path = folderPath.strip().strip("/").strip("\\")
     target_dir = os.path.realpath(os.path.join(DOCUMENTS_DIR, clean_folder_path))
-
-    if not target_dir.startswith(DOCUMENTS_DIR) or os.path.islink(target_dir):
-        raise HTTPException(status_code=400, detail="Invalid destination path")
+    validate_safe_path(target_dir, allow_root=True)
 
     ext = filename.split(".")[-1].lower() if "." in filename else ""
     if ext not in ALLOWED_EXTENSIONS:
@@ -571,9 +682,7 @@ async def upload_file(
 
     os.makedirs(target_dir, mode=0o775, exist_ok=True)
     target_file_path = os.path.realpath(os.path.join(target_dir, filename))
-
-    if not target_file_path.startswith(DOCUMENTS_DIR) or os.path.islink(target_file_path):
-        raise HTTPException(status_code=400, detail="Forbidden target path")
+    validate_safe_path(target_file_path, allow_root=False)
 
     is_replace = replace.lower() == "true"
     if os.path.exists(target_file_path) and not is_replace:
@@ -650,15 +759,9 @@ async def delete_item(
 
     client_ip = request.client.host if request.client else "unknown"
     clean_path = item_path.strip().strip("/").strip("\\")
-    if not clean_path:
-        raise HTTPException(status_code=400, detail="Cannot delete root documents directory")
-
+    
     target_path = os.path.realpath(os.path.join(DOCUMENTS_DIR, clean_path))
-    if not target_path.startswith(DOCUMENTS_DIR) or os.path.islink(target_path) or target_path == DOCUMENTS_DIR:
-        raise HTTPException(status_code=400, detail="Invalid deletion path request")
-
-    if ".tmp_uploads" in target_path or ".trash" in target_path or ".metadata" in target_path:
-        raise HTTPException(status_code=400, detail="Cannot delete internal system folders")
+    validate_safe_path(target_path, allow_root=False)
 
     if not os.path.exists(target_path):
         raise HTTPException(status_code=404, detail="Document or folder no longer exists")
@@ -737,8 +840,7 @@ async def restore_from_trash(trash_id: str, request: Request, session: dict = De
 
     orig_rel_path = target_entry["original_path"]
     orig_abs_path = os.path.realpath(os.path.join(DOCUMENTS_DIR, orig_rel_path))
-    if not orig_abs_path.startswith(DOCUMENTS_DIR):
-        raise HTTPException(status_code=400, detail="Invalid original destination path")
+    validate_safe_path(orig_abs_path, allow_root=False)
 
     if os.path.exists(orig_abs_path):
         raise HTTPException(status_code=409, detail=f"A file or folder already exists at '{orig_rel_path}'. Please remove or rename it first.")
@@ -801,7 +903,6 @@ async def get_storage_summary():
     all_files = []
 
     for root, dirs, files in os.walk(DOCUMENTS_DIR):
-        # Exclude hidden system folders
         dirs[:] = [d for d in dirs if not d.startswith(".")]
         rel_root = os.path.relpath(root, DOCUMENTS_DIR)
         if rel_root.startswith("."):
@@ -815,6 +916,11 @@ async def get_storage_summary():
 
             file_abs = os.path.join(root, filename)
             if os.path.islink(file_abs):
+                continue
+
+            try:
+                validate_safe_path(file_abs, allow_root=False)
+            except Exception:
                 continue
 
             size = os.path.getsize(file_abs)
@@ -857,7 +963,7 @@ async def get_storage_summary():
 
 @app.get("/api/search")
 async def search_files(q: str = "", ext: Optional[str] = None):
-    """Server-side search by filename or extension"""
+    """Server-side search by filename or extension with strict path traversal shield"""
     query = (q or "").strip().lower()
     ext_filter = (ext or "").strip().lower()
 
@@ -876,7 +982,9 @@ async def search_files(q: str = "", ext: Optional[str] = None):
                 continue
 
             file_abs = os.path.join(root, filename)
-            if os.path.islink(file_abs):
+            try:
+                validate_safe_path(file_abs, allow_root=False)
+            except Exception:
                 continue
 
             file_ext = filename.split(".")[-1].lower() if "." in filename else ""
@@ -907,15 +1015,15 @@ async def get_file_metadata(item_path: str):
     """Return safe metadata and SHA-256 checksum for document"""
     clean_path = item_path.strip().strip("/").strip("\\")
     target_path = os.path.realpath(os.path.join(DOCUMENTS_DIR, clean_path))
+    validate_safe_path(target_path, allow_root=False)
 
-    if not target_path.startswith(DOCUMENTS_DIR) or os.path.islink(target_path) or not os.path.exists(target_path) or not os.path.isfile(target_path):
+    if not os.path.exists(target_path) or not os.path.isfile(target_path):
         raise HTTPException(status_code=404, detail="Document not found")
 
     filename = os.path.basename(target_path)
     folder_rel = os.path.dirname(clean_path)
     ext = filename.split(".")[-1].lower() if "." in filename else ""
 
-    # Check for cached metadata file
     meta_file = os.path.realpath(os.path.join(DOCUMENTS_DIR, ".metadata", folder_rel, f"{filename}.json"))
     sha256_hash = None
 
@@ -954,7 +1062,7 @@ async def get_audit_logs(session: dict = Depends(require_auth)):
                 line = line.strip()
                 if line:
                     logs.append(json.loads(line))
-        return logs[-100:] # Return last 100 audit events
+        return logs[-100:]
     except Exception as e:
         logger.error(f"Error reading audit logs: {e}")
         return []
