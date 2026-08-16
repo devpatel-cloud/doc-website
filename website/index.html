@@ -263,27 +263,18 @@
             <p>Drag and drop documents or videos here, or</p>
             <label for="file-input" class="btn-secondary btn-browse">Choose Files</label>
             <input type="file" id="file-input" multiple class="hidden">
-            <span class="dropzone-hint">Supports PDFs, Office docs, images, MP4/WebM videos (Max 100MB)</span>
+            <span class="dropzone-hint">Supports PDFs, Office docs, images, MP4/WebM videos (Max 2 GB per file)</span>
           </div>
 
-          <!-- File Queue List -->
+          <!-- File Queue List & Independent Progress Cards Container -->
           <div id="file-queue-container" class="file-queue-container hidden">
-            <h4>Files Queue (<span id="queue-count">0</span>)</h4>
-            <div id="file-queue-list" class="file-queue-list"></div>
-
-            <!-- Overall Progress Bar -->
-            <div id="overall-progress-box" class="progress-box hidden">
-              <div class="progress-header">
-                <span id="progress-status-text">Uploading files...</span>
-                <span id="overall-progress-pct">0%</span>
-              </div>
-              <div class="progress-bar-bg">
-                <div id="overall-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
-              </div>
+            <div class="queue-summary-bar">
+              <span id="queue-summary-text">Ready to upload</span>
             </div>
+            <div id="file-queue-list" class="file-queue-list" aria-live="polite"></div>
 
             <div class="queue-actions">
-              <button id="btn-clear-queue" class="btn-secondary">Clear List</button>
+              <button id="btn-clear-queue" class="btn-secondary">Clear Completed</button>
               <button id="btn-start-upload" class="btn-download">Start Upload →</button>
             </div>
           </div>
@@ -309,6 +300,39 @@
         </div>
       </div>
     </div>
+  <!-- Modern Admin Delete Confirmation Modal -->
+  <div id="delete-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-container duplicate-modal-box">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="badge" style="background-color: var(--danger-bg); color: var(--danger);">Admin Action</span>
+          <h2 id="delete-modal-heading">Delete Document?</h2>
+        </div>
+        <button id="btn-delete-close" class="btn-icon btn-close" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 1.5rem; background: var(--bg-surface); display: block;">
+        <p style="font-weight: 600; font-size: 1rem; color: var(--text-main); margin-bottom: 0.5rem;" id="delete-item-name">Top_20_Docker_Commands.pdf</p>
+        <p style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 1rem;" id="delete-modal-warning">This file will be permanently deleted. This action cannot be undone.</p>
+        
+        <!-- Non-empty folder confirmation box -->
+        <div id="delete-folder-confirm-box" class="hidden" style="margin-bottom: 1rem;">
+          <p style="font-size: 0.8125rem; color: var(--danger); font-weight: 600; margin-bottom: 0.5rem;">To confirm folder deletion, please type <code style="background:var(--danger-bg); padding:2px 6px; border-radius:4px;">DELETE</code> below:</p>
+          <input type="text" id="delete-folder-input" placeholder="Type DELETE to confirm" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-medium); border-radius: var(--radius-sm); font-size: 0.875rem;">
+        </div>
+
+        <div id="delete-modal-error" class="card-error-box hidden" style="margin-bottom: 1rem;"></div>
+
+        <div class="form-actions" style="justify-content: flex-end; gap: 0.75rem;">
+          <button id="btn-delete-cancel" class="btn-secondary">Cancel</button>
+          <button id="btn-delete-confirm" class="btn-download" style="background-color: var(--danger); border-color: var(--danger);">Delete Permanently</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Banner -->
+  <div id="toast-notification" class="toast-notification hidden" role="alert" aria-live="polite">
+    <span id="toast-message">✓ Document deleted successfully</span>
   </div>
 
   <!-- Footer -->

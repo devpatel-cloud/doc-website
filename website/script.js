@@ -701,132 +701,282 @@
     });
   }
 
-  /* File Queue & Drag Drop Logic */
-  function addFilesToQueue(files) {
-    for (let i = 0; i < files.length; i++) {
-      state.queuedFiles.push(files[i]);
+  /* Independent Stateful Upload Queue Architecture */
+  const MAX_CONCURRENT_UPLOADS = 2;
+  state.uploadQueue = []; // items: { id, file, folderPath, status, progressPct, uploadedMB, totalMB, speedMBs, etaSec, errorMsg, xhr, replace }
+
+  function getFriendlyErrorMessage(status, rawError) {
+    if (!status || status === 0) {
+      return "Connection interrupted. Please check your network connection and try again.";
     }
-    renderFileQueue();
+    if (status === 413) {
+      return "This file is too large. The maximum allowed size is 2 GB.";
+    }
+    if (status === 401) {
+      return "Your upload session has expired. Please sign in again.";
+    }
+    if (status === 403) {
+      return "You don't have permission to upload to this folder.";
+    }
+    if (status === 415) {
+      return "This file type isn't supported.";
+    }
+    if (status === 507) {
+      return "The server doesn't have enough storage space for this file.";
+    }
+    if (status === 409) {
+      return "A file with this name already exists in the destination folder.";
+    }
+    if (status === 504 || status === 408) {
+      return "The upload took too long and was interrupted. Please try again.";
+    }
+    return rawError || "Something went wrong while uploading this file. Please try again.";
   }
 
-  function renderFileQueue() {
-    if (state.queuedFiles.length === 0) {
+  function getFileIcon(filename) {
+    const ext = filename.split('.').pop().toLowerCase();
+    if (['mp4', 'webm', 'mkv', 'mov', 'avi', 'm4v', '3gp'].includes(ext)) return '🎬';
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return '🖼️';
+    if (['zip', 'tar', 'gz', '7z', 'rar'].includes(ext)) return '📦';
+    if (ext === 'pdf') return '📄';
+    return '📁';
+  }
+
+  function addFilesToQueue(files) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const item = {
+        id: `upload_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        file: file,
+        folderPath: state.selectedUploadPath || '',
+        status: 'queued', // queued, uploading, completed, failed, cancelled
+        progressPct: 0,
+        uploadedMB: '0.0',
+        totalMB: (file.size / (1024 * 1024)).toFixed(1),
+        speedMBs: '0.0',
+        etaSec: 0,
+        errorMsg: '',
+        xhr: null,
+        replace: false
+      };
+      state.uploadQueue.push(item);
+    }
+    renderUploadQueue();
+  }
+
+  function renderUploadQueue() {
+    if (!state.uploadQueue || state.uploadQueue.length === 0) {
       fileQueueContainer.classList.add('hidden');
       return;
     }
 
     fileQueueContainer.classList.remove('hidden');
-    queueCountEl.textContent = state.queuedFiles.length;
 
-    fileQueueList.innerHTML = state.queuedFiles.map((file, idx) => `
-      <div class="queue-item">
-        <div class="queue-item-info">
-          <span class="queue-item-name" title="${escapeHTML(file.name)}">${escapeHTML(file.name)}</span>
-          <span class="queue-item-size">(${formatFileSize(file.size)})</span>
-        </div>
-        <button class="queue-item-remove" onclick="window.DocPortal.removeQueueItem(${idx})">✕</button>
-      </div>
-    `).join('');
-  }
+    const total = state.uploadQueue.length;
+    const completed = state.uploadQueue.filter(i => i.status === 'completed').length;
+    const uploading = state.uploadQueue.filter(i => i.status === 'uploading').length;
+    const failed = state.uploadQueue.filter(i => i.status === 'failed').length;
+    const queued = state.uploadQueue.filter(i => i.status === 'queued').length;
 
-  function removeQueueItem(index) {
-    state.queuedFiles.splice(index, 1);
-    renderFileQueue();
-  }
-
-  function clearQueue() {
-    state.queuedFiles = [];
-    renderFileQueue();
-    overallProgressBox.classList.add('hidden');
-  }
-
-  async function startUploadQueue(replaceFlag = false) {
-    if (state.queuedFiles.length === 0) return;
-
-    overallProgressBox.classList.remove('hidden');
-    btnStartUpload.disabled = true;
-
-    let successCount = 0;
-    const totalFiles = state.queuedFiles.length;
-
-    for (let i = 0; i < state.queuedFiles.length; i++) {
-      const file = state.queuedFiles[i];
-      progressStatusText.textContent = `Uploading file ${i + 1} of ${totalFiles}: ${file.name}...`;
-
-      try {
-        const result = await uploadSingleFile(file, state.selectedUploadPath, replaceFlag);
-        if (result.status === 'exists') {
-          // Open duplicate prompt
-          state.duplicateContext = { fileIndex: i, file, folderPath: state.selectedUploadPath };
-          duplicateMsgText.textContent = `File "${file.name}" already exists in ${state.selectedUploadPath || 'Documents Root'}. Do you want to replace it?`;
-          duplicateModal.classList.remove('hidden');
-          return; // Pause queue until user decides
-        }
-        successCount++;
-      } catch (err) {
-        alert(`Failed to upload ${file.name}: ${err.message}`);
+    const summaryText = document.getElementById('queue-summary-text');
+    if (summaryText) {
+      if (uploading > 0 || queued > 0) {
+        summaryText.textContent = `Uploading ${completed + uploading} of ${total} (✓ ${completed} completed, ↻ ${uploading} active, ✕ ${failed} failed)`;
+      } else if (failed > 0) {
+        summaryText.textContent = `${completed} uploaded successfully. ${failed} file${failed > 1 ? 's need' : ' needs'} attention.`;
+      } else {
+        summaryText.textContent = `All ${completed} upload${completed > 1 ? 's' : ''} completed successfully!`;
       }
-
-      const pct = Math.round(((i + 1) / totalFiles) * 100);
-      overallProgressPct.textContent = `${pct}%`;
-      overallProgressFill.style.width = `${pct}%`;
     }
 
-    progressStatusText.textContent = `Upload complete! (${successCount} files uploaded)`;
-    btnStartUpload.disabled = false;
-    
-    // Clear queue after delay and refresh public view
-    setTimeout(() => {
-      clearQueue();
-      uploadModal.classList.add('hidden');
-      loadCurrentFolder();
-    }, 1200);
-  }
+    fileQueueList.innerHTML = state.uploadQueue.map(item => {
+      const icon = getFileIcon(item.file.name);
+      
+      let badgeHTML = `<span class="card-status-badge badge-${item.status}">${item.status.toUpperCase()}</span>`;
+      let progressFillClass = item.status === 'completed' ? 'card-completed-bar' : '';
 
-  function uploadSingleFile(file, folderPath, replace = false) {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('folderPath', folderPath);
-      formData.append('replace', replace ? 'true' : 'false');
-
-      xhr.open('POST', '/api/upload', true);
-      if (state.csrfToken) {
-        xhr.setRequestHeader('X-CSRF-Token', state.csrfToken);
+      let metaText = `${item.uploadedMB} / ${item.totalMB} MB`;
+      if (item.status === 'uploading') {
+        metaText += ` • ${item.speedMBs} MB/s • ${item.etaSec}s left`;
+      } else if (item.status === 'completed') {
+        metaText = `${item.totalMB} MB • Uploaded cleanly`;
       }
 
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          const filePct = Math.round((e.loaded / e.total) * 100);
-          overallProgressPct.textContent = `${filePct}%`;
-          overallProgressFill.style.width = `${filePct}%`;
-        }
-      };
+      let actionsHTML = '';
+      if (item.status === 'uploading') {
+        actionsHTML = `<button type="button" class="btn-card-cancel" onclick="window.DocPortal.cancelUpload('${item.id}')">Cancel</button>`;
+      } else if (item.status === 'failed') {
+        actionsHTML = `
+          <button type="button" class="btn-card-retry" onclick="window.DocPortal.retryUpload('${item.id}')">Try Again</button>
+          <button type="button" class="btn-card-remove" onclick="window.DocPortal.removeQueueItem('${item.id}')">Remove</button>
+        `;
+      } else if (item.status === 'queued' || item.status === 'cancelled') {
+        actionsHTML = `<button type="button" class="btn-card-remove" onclick="window.DocPortal.removeQueueItem('${item.id}')">Remove</button>`;
+      }
 
-      xhr.onload = () => {
-        if (xhr.status === 200) {
-          try {
-            const data = JSON.parse(xhr.responseText);
-            resolve(data);
-          } catch (e) {
-            resolve({ status: 'success' });
-          }
-        } else if (xhr.status === 409) {
-          resolve({ status: 'exists' });
-        } else {
-          try {
-            const errData = JSON.parse(xhr.responseText);
-            reject(new Error(errData.detail || `HTTP ${xhr.status}`));
-          } catch (e) {
-            reject(new Error(`HTTP ${xhr.status}`));
-          }
-        }
-      };
+      let errorBoxHTML = item.errorMsg ? `<div class="card-error-box">${escapeHTML(item.errorMsg)}</div>` : '';
 
-      xhr.onerror = () => reject(new Error('Network error during file upload'));
-      xhr.send(formData);
-    });
+      return `
+        <div class="file-upload-card state-${item.status}">
+          <div class="card-top-row">
+            <div class="card-file-name-group">
+              <span class="card-file-icon">${icon}</span>
+              <span class="card-file-name" title="${escapeHTML(item.file.name)}">${escapeHTML(item.file.name)}</span>
+            </div>
+            ${badgeHTML}
+          </div>
+          <div class="card-progress-bar-bg">
+            <div class="card-progress-bar-fill ${progressFillClass}" style="width: ${item.progressPct}%;"></div>
+          </div>
+          <div class="card-meta-row">
+            <span>${metaText}</span>
+            <span>${item.progressPct}%</span>
+          </div>
+          ${errorBoxHTML}
+          ${actionsHTML ? `<div class="card-actions-row">${actionsHTML}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  function processUploadQueue() {
+    const activeTasks = state.uploadQueue.filter(i => i.status === 'uploading');
+    const availableSlots = MAX_CONCURRENT_UPLOADS - activeTasks.length;
+
+    if (availableSlots <= 0) return;
+
+    const queuedTasks = state.uploadQueue.filter(i => i.status === 'queued');
+    for (let i = 0; i < Math.min(availableSlots, queuedTasks.length); i++) {
+      startSingleTaskUpload(queuedTasks[i]);
+    }
+  }
+
+  function startSingleTaskUpload(item) {
+    item.status = 'uploading';
+    item.errorMsg = '';
+    renderUploadQueue();
+
+    const xhr = new XMLHttpRequest();
+    item.xhr = xhr;
+
+    const formData = new FormData();
+    formData.append('file', item.file);
+    formData.append('folderPath', item.folderPath);
+    formData.append('replace', item.replace ? 'true' : 'false');
+
+    xhr.open('POST', '/api/upload', true);
+    if (state.csrfToken) {
+      xhr.setRequestHeader('X-CSRF-Token', state.csrfToken);
+    }
+
+    const startTime = Date.now();
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && item.status === 'uploading') {
+        item.progressPct = Math.round((e.loaded / e.total) * 100);
+        const elapsedSec = (Date.now() - startTime) / 1000;
+        const speedBps = elapsedSec > 0 ? (e.loaded / elapsedSec) : 0;
+        item.speedMBs = (speedBps / (1024 * 1024)).toFixed(1);
+        
+        const remainingBytes = e.total - e.loaded;
+        item.etaSec = speedBps > 0 ? Math.ceil(remainingBytes / speedBps) : 0;
+        item.uploadedMB = (e.loaded / (1024 * 1024)).toFixed(1);
+
+        renderUploadQueue();
+      }
+    };
+
+    xhr.onload = () => {
+      item.xhr = null;
+      if (xhr.status === 200) {
+        item.status = 'completed';
+        item.progressPct = 100;
+        item.uploadedMB = item.totalMB;
+        renderUploadQueue();
+        processUploadQueue();
+        loadCurrentFolder();
+      } else if (xhr.status === 409) {
+        state.duplicateContext = { item };
+        duplicateMsgText.textContent = `File "${item.file.name}" already exists in ${item.folderPath || 'Documents Root'}. Do you want to replace it?`;
+        duplicateModal.classList.remove('hidden');
+      } else {
+        item.status = 'failed';
+        let detail = '';
+        try {
+          const errData = JSON.parse(xhr.responseText);
+          detail = errData.detail || '';
+        } catch (e) {}
+        item.errorMsg = getFriendlyErrorMessage(xhr.status, detail);
+        renderUploadQueue();
+        processUploadQueue();
+      }
+    };
+
+    xhr.onerror = () => {
+      item.xhr = null;
+      if (item.status !== 'cancelled') {
+        item.status = 'failed';
+        item.errorMsg = getFriendlyErrorMessage(0, '');
+        renderUploadQueue();
+        processUploadQueue();
+      }
+    };
+
+    xhr.onabort = () => {
+      item.xhr = null;
+      item.status = 'cancelled';
+      item.errorMsg = 'Upload cancelled by user.';
+      renderUploadQueue();
+      processUploadQueue();
+    };
+
+    xhr.send(formData);
+  }
+
+  function cancelUpload(itemId) {
+    const item = state.uploadQueue.find(i => i.id === itemId);
+    if (item) {
+      if (item.xhr) {
+        item.xhr.abort();
+      } else {
+        item.status = 'cancelled';
+        renderUploadQueue();
+        processUploadQueue();
+      }
+    }
+  }
+
+  function retryUpload(itemId) {
+    const item = state.uploadQueue.find(i => i.id === itemId);
+    if (item) {
+      item.status = 'queued';
+      item.errorMsg = '';
+      item.progressPct = 0;
+      item.uploadedMB = '0.0';
+      renderUploadQueue();
+      processUploadQueue();
+    }
+  }
+
+  function removeQueueItem(itemId) {
+    const idx = state.uploadQueue.findIndex(i => i.id === itemId);
+    if (idx !== -1) {
+      const item = state.uploadQueue[idx];
+      if (item.xhr) {
+        item.xhr.abort();
+      }
+      state.uploadQueue.splice(idx, 1);
+      renderUploadQueue();
+    }
+  }
+
+  function clearCompletedQueue() {
+    state.uploadQueue = state.uploadQueue.filter(i => i.status !== 'completed');
+    renderUploadQueue();
+  }
+
+  function startUploadQueue() {
+    processUploadQueue();
   }
 
   /**
@@ -904,8 +1054,8 @@
       }
     });
 
-    btnClearQueue.addEventListener('click', clearQueue);
-    btnStartUpload.addEventListener('click', () => startUploadQueue(false));
+    btnClearQueue.addEventListener('click', clearCompletedQueue);
+    btnStartUpload.addEventListener('click', () => startUploadQueue());
 
     // Duplicate File Modal Buttons
     btnDupCancel.addEventListener('click', () => {
@@ -1038,7 +1188,10 @@
     openViewer,
     navigateToFolder,
     navigateToBreadcrumb,
-    removeQueueItem
+    removeQueueItem,
+    cancelUpload,
+    retryUpload,
+    clearCompletedQueue
   };
 
   // Start App

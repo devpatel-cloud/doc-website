@@ -15,10 +15,10 @@ from pydantic import BaseModel
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("docvault_backend")
 
-# Standardized Environment Variables (with legacy fallbacks)
+# Standardized Environment Variables (Default 2048 MB / 2 GB per file)
 UPLOAD_PASSWORD = os.getenv("DOCVAULT_ADMIN_PASSWORD", os.getenv("UPLOAD_PASSWORD", "devpatel"))
-MAX_FILE_SIZE_MB = int(os.getenv("DOCVAULT_MAX_FILE_SIZE_MB", os.getenv("MAX_FILE_SIZE_MB", "100")))
-MIN_FREE_DISK_GB = float(os.getenv("DOCVAULT_MIN_FREE_DISK_GB", os.getenv("MIN_FREE_DISK_GB", "1.0")))
+MAX_FILE_SIZE_MB = int(os.getenv("DOCVAULT_MAX_FILE_SIZE_MB", os.getenv("MAX_FILE_SIZE_MB", "2048")))
+MIN_FREE_DISK_GB = float(os.getenv("DOCVAULT_MIN_FREE_DISK_GB", os.getenv("MIN_FREE_DISK_GB", "2.5")))
 DOCUMENTS_DIR = os.path.realpath(os.getenv("DOCVAULT_DOCUMENTS_DIR", os.getenv("DOCUMENTS_DIR", "/documents")))
 SESSION_SECRET = os.getenv("DOCVAULT_SESSION_SECRET", os.getenv("SESSION_SECRET", "docvault_secret_key_2026"))
 
@@ -36,7 +36,7 @@ ALLOWED_EXTENSIONS = {
     "mp4", "webm", "mkv", "mov", "avi", "m4v", "3gp", "mpeg", "mpg", "ts"
 }
 
-app = FastAPI(title="DocVault Admin Upload API — Hardened V2", version="2.3.0")
+app = FastAPI(title="DocVault Admin Upload API — Large Video V2", version="2.4.0")
 
 class LoginRequest(BaseModel):
     password: str
@@ -94,8 +94,12 @@ def validate_magic_bytes(header_bytes: bytes, ext: str) -> bool:
         return b"RIFF" in header_bytes[:4] and b"WEBP" in header_bytes[8:12]
     elif ext in ("zip", "docx", "xlsx", "pptx"):
         return header_bytes.startswith(b"PK\x03\x04")
-    elif ext in ("mp4", "mov"):
+    elif ext in ("mp4", "mov", "m4v"):
         return b"ftyp" in header_bytes[:32]
+    elif ext in ("mkv", "webm"):
+        return header_bytes.startswith(b"\x1a\x45\xdf\xa3")
+    elif ext == "avi":
+        return b"RIFF" in header_bytes[:4] and b"AVI " in header_bytes[8:12]
     return True
 
 @app.post("/api/auth/login")
@@ -230,7 +234,7 @@ async def upload_file(
         logger.error(f"Disk space threshold triggered: {free_bytes} free bytes remaining.")
         raise HTTPException(
             status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
-            detail="Server storage space threshold reached. Upload rejected."
+            detail=f"Server storage threshold reached ({MIN_FREE_DISK_GB}GB required margin). Upload rejected."
         )
 
     filename = sanitize_filename(file.filename or "")
@@ -264,7 +268,7 @@ async def upload_file(
         logger.error(f"[PERMISSION ERROR] Cannot create directory {target_dir}: {pe}")
         raise HTTPException(
             status_code=500,
-            detail=f"Permission denied creating folder '{clean_folder_path}'. Please run: sudo chown -R $USER:101 ./documents && sudo chmod -R 775 ./documents"
+            detail=f"Permission denied creating folder '{clean_folder_path}'. Run: sudo chown -R $USER:101 ./documents && sudo chmod -R 775 ./documents"
         )
 
     target_file_path = os.path.realpath(os.path.join(target_dir, filename))
@@ -293,42 +297,44 @@ async def upload_file(
         staging_dir = "/tmp/uploads"
         os.makedirs(staging_dir, mode=0o775, exist_ok=True)
 
-    tmp_filename = f"{secrets.token_hex(12)}_{filename}"
-    tmp_path = os.path.join(staging_dir, tmp_filename)
+    # Atomic .part file naming
+    part_filename = f".{filename}.{secrets.token_hex(8)}.part"
+    part_path = os.path.join(staging_dir, part_filename)
     max_bytes = MAX_FILE_SIZE_MB * 1024 * 1024
     total_bytes = 0
     header_sample = bytearray()
 
     try:
-        with open(tmp_path, "wb") as buffer:
-            while chunk := await file.read(1024 * 1024):
+        # RAM-Safe Streaming: Write 1MB chunks directly to disk
+        with open(part_path, "wb") as buffer:
+            while chunk := await file.read(1024 * 1024): # 1MB chunk
                 total_bytes += len(chunk)
                 if len(header_sample) < 2048:
                     header_sample.extend(chunk[:2048 - len(header_sample)])
                 
                 if total_bytes > max_bytes:
                     buffer.close()
-                    if os.path.exists(tmp_path):
-                        os.remove(tmp_path)
-                    logger.warning(f"Size limit exceeded ({total_bytes} bytes) from IP {client_ip}")
+                    if os.path.exists(part_path):
+                        os.remove(part_path)
+                    logger.warning(f"Upload size limit exceeded ({total_bytes} bytes) from IP {client_ip}")
                     raise HTTPException(
                         status_code=413,
-                        detail=f"File size exceeds maximum allowed limit of {MAX_FILE_SIZE_MB}MB"
+                        detail=f"File size exceeds maximum allowed upload limit of {MAX_FILE_SIZE_MB}MB ({MAX_FILE_SIZE_MB // 1024} GB)"
                     )
                 buffer.write(chunk)
 
-        # Magic Bytes Validation
+        # Magic Bytes Signature Validation
         if not validate_magic_bytes(bytes(header_sample), ext):
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+            if os.path.exists(part_path):
+                os.remove(part_path)
             logger.warning(f"File magic byte validation failed for extension .{ext} from IP {client_ip}")
             raise HTTPException(
                 status_code=400,
                 detail=f"File signature does not match declared extension '.{ext}'"
             )
 
-        # Atomic Move to destination with safe non-executable permissions (0o664)
-        shutil.move(tmp_path, target_file_path)
+        # Atomic Rename: Move .part file to final filename on completion
+        shutil.move(part_path, target_file_path)
         try:
             os.chmod(target_file_path, 0o664)
         except Exception:
@@ -336,7 +342,7 @@ async def upload_file(
 
         logger.info(
             f"[UPLOAD SUCCESS] IP: {client_ip} | File: {filename} | "
-            f"Size: {total_bytes} bytes | Path: /documents/{clean_folder_path}"
+            f"Size: {total_bytes} bytes ({round(total_bytes / (1024*1024), 2)} MB) | Path: /documents/{clean_folder_path}"
         )
 
         return {
@@ -348,23 +354,95 @@ async def upload_file(
         }
 
     except HTTPException:
+        if os.path.exists(part_path):
+            try:
+                os.remove(part_path)
+            except Exception:
+                pass
         raise
     except PermissionError as pe:
-        if os.path.exists(tmp_path):
+        if os.path.exists(part_path):
             try:
-                os.remove(tmp_path)
+                os.remove(part_path)
             except Exception:
                 pass
         logger.error(f"[PERMISSION ERROR] Cannot write file to {target_file_path}: {pe}")
         raise HTTPException(
             status_code=500,
-            detail=f"Permission denied writing to folder '{clean_folder_path}'. Please run: sudo chown -R $USER:101 ./documents && sudo chmod -R 775 ./documents"
+            detail=f"Permission denied writing to folder '{clean_folder_path}'. Run: sudo chown -R $USER:101 ./documents && sudo chmod -R 775 ./documents"
         )
     except Exception as e:
-        if os.path.exists(tmp_path):
+        if os.path.exists(part_path):
             try:
-                os.remove(tmp_path)
+                os.remove(part_path)
             except Exception:
                 pass
         logger.error(f"Internal upload failure: {e}")
         raise HTTPException(status_code=500, detail=f"Internal error during file upload processing: {str(e)}")
+
+@app.delete("/api/documents/{item_path:path}")
+async def delete_item(
+    item_path: str,
+    request: Request,
+    confirm: Optional[str] = None,
+    session: dict = Depends(require_auth)
+):
+    # CSRF validation
+    x_csrf_token = request.headers.get("X-CSRF-Token")
+    if not x_csrf_token or not secrets.compare_digest(x_csrf_token, session.get("csrf_token", "")):
+        logger.warning("Delete rejected: CSRF token missing or invalid")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF validation failed")
+
+    client_ip = request.client.host if request.client else "unknown"
+
+    clean_path = item_path.strip().strip("/").strip("\\")
+    if not clean_path:
+        raise HTTPException(status_code=400, detail="Cannot delete root documents directory")
+
+    target_path = os.path.realpath(os.path.join(DOCUMENTS_DIR, clean_path))
+
+    # Strict Path Traversal & Symlink Shield
+    if not target_path.startswith(DOCUMENTS_DIR) or os.path.islink(target_path):
+        logger.warning(f"[SECURITY ALERT] Path traversal or symlink delete escape attempt from IP {client_ip}: {item_path}")
+        raise HTTPException(status_code=400, detail="Invalid deletion path request")
+
+    if target_path == DOCUMENTS_DIR:
+        logger.warning(f"[SECURITY ALERT] Attempted deletion of root DOCUMENTS_DIR from IP {client_ip}")
+        raise HTTPException(status_code=400, detail="Cannot delete root documents directory")
+
+    if ".tmp_uploads" in target_path or target_path.endswith(".part"):
+        logger.warning(f"[SECURITY ALERT] Attempted deletion of active staging upload file from IP {client_ip}")
+        raise HTTPException(status_code=400, detail="Cannot delete active upload staging files")
+
+    if not os.path.exists(target_path):
+        logger.warning(f"Delete target not found: {clean_path}")
+        raise HTTPException(status_code=404, detail="Document or folder no longer exists")
+
+    try:
+        if os.path.isfile(target_path):
+            os.remove(target_path)
+            logger.info(f"[ADMIN DELETE SUCCESS] IP: {client_ip} | Type: file | Path: /documents/{clean_path}")
+            return {"status": "success", "message": "Document deleted successfully", "path": clean_path}
+        elif os.path.isdir(target_path):
+            entries = os.listdir(target_path)
+            if entries and confirm != "true":
+                return JSONResponse(
+                    status_code=409,
+                    content={
+                        "status": "requires_confirmation",
+                        "itemCount": len(entries),
+                        "folderName": os.path.basename(target_path),
+                        "message": f"Folder contains {len(entries)} item(s). Require explicit confirmation."
+                    }
+                )
+            shutil.rmtree(target_path)
+            logger.info(f"[ADMIN DELETE SUCCESS] IP: {client_ip} | Type: folder | Path: /documents/{clean_path}")
+            return {"status": "success", "message": "Folder deleted successfully", "path": clean_path}
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported target type for deletion")
+    except PermissionError as pe:
+        logger.error(f"[ADMIN DELETE PERMISSION ERROR] IP: {client_ip} | Path: {clean_path} | Error: {pe}")
+        raise HTTPException(status_code=500, detail="Permission denied deleting target item.")
+    except Exception as e:
+        logger.error(f"[ADMIN DELETE FAILURE] IP: {client_ip} | Path: {clean_path} | Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Unable to delete target item: {str(e)}")

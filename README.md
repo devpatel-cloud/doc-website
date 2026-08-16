@@ -15,12 +15,14 @@ For step-by-step production server setup with HTTPS & domain names, see **[SERVE
 - 🔐 **Password-Protected Admin Upload System**: Click `Upload` in the header, enter password (`devpatel` configured in `.env`), and upload files directly from the browser.
 - 📁 **Interactive Destination Folder Tree**: Choose the destination folder from an automatically rendered server folder tree before uploading.
 - 📤 **Drag & Drop Multi-File Uploads**: Drag and drop multiple documents or videos with real-time percentage progress bars.
-- 🎬 **Native Video Player Support**: Browser preview modal plays `.mp4` and `.webm` videos directly with native HTML5 controls; download links provided for `.mkv`, `.avi`, `.mov`.
+- 🎬 **Large Video Streaming & HTTP Byte-Range Requests**: Upload videos up to **2 GB** (`DOCVAULT_MAX_FILE_SIZE_MB=2048`). Native Nginx HTTP Range Requests (`HTTP 206 Partial Content`, `Accept-Ranges: bytes`) enable instant seeking in large MP4, WebM, MKV, MOV, and AVI videos without loading complete files into memory.
+- 💾 **RAM-Safe Chunked Disk Streaming**: Uploads stream in 1MB chunks directly to disk (`.filename.part`), keeping FastAPI container memory consumption low (~42 MB) regardless of file size.
+- 📤 **Real-Time Progress & Speed Metrics**: Multi-file upload drawer displays upload progress percentage, uploaded MB vs total size, upload speed (MB/s), and estimated time remaining (ETA).
 - 🛡️ **Duplicate File & Security Validation**:
-  - File extension whitelist & path traversal prevention.
+  - Magic byte file signature verification (`%PDF-`, `\x89PNG`, `PK\x03\x04`, `ftyp`).
+  - Path traversal & symlink prevention.
   - Interactive prompt when uploading duplicate files ("Replace / Skip").
-  - 100MB configurable upload file size limit (`MAX_FILE_SIZE_MB`).
-  - Brute-force rate limiting on login attempts.
+  - Configurable minimum free disk space threshold (`DOCVAULT_MIN_FREE_DISK_GB=2.5`).
 - 🙈 **Git Document Isolation**: Actual documents in `documents/` are excluded from Git via `.gitignore` (`!documents/.gitkeep`), so `git pull` on the server will **never** delete or overwrite your published files.
 
 ---
